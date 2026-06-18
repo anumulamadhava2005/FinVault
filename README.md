@@ -1,56 +1,61 @@
-# Welcome to your Expo app 👋
+# FinVault Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A standalone React Native port of the FinVault personal-finance app, built with
+**Expo (SDK 56) + expo-router** and **React Native Paper**. All data lives
+locally on-device in **SQLite** (expo-sqlite) — there is no backend.
 
-## Get started
+## Modules (full parity with the web app)
 
-1. Install dependencies
+| Screen | What it does |
+|---|---|
+| Dashboard | Net worth, portfolio, financial-health score, income-vs-expense trend, allocation, goals overview |
+| Assets | Holdings, allocation pie, allocation-vs-benchmark (Recommended-first), add/delete |
+| Expenses | Monthly total vs budget, per-category bars, recent expenses, add/delete |
+| Loans | Outstanding/EMI KPIs, Original-vs-Outstanding grouped bars, debt-health ratios, EMI/prepay/delete |
+| Protect | Coverage KPIs, coverage-by-type pie, policy list, add/delete |
+| Goals | Timeline status (On Track / Behind / Overdue) with status-coloured bar + "expected by today" pace marker, required-monthly, Target-vs-Achieved chart |
+| Vault | Credential list, strength meter, show/hide, password generator, add/delete |
+| Reports | Module-selectable export (Expenses excluded by design) via the native share sheet |
+| Settings | Profile edit, theme (light/dark/auto), preferences |
 
-   ```bash
-   npm install
-   ```
+## Architecture
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+src/
+  app/            expo-router routes (Drawer) — each file re-exports a screen
+  screens/        screen implementations
+  components/     ui.tsx (cards, KPIs, progress bar, status chip), charts.tsx
+  services/       finance.ts (logic ported from the web app's services.py), constants.ts
+  db/             schema.ts, index.ts (sync expo-sqlite helpers), seed.ts (demo data)
+  models/         TypeScript table models
+  context/        AppContext (DB init, theme mode, refresh signal)
+  theme/          Paper light/dark themes + shared chart colours
+  utils/          money (paise) + date helpers
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Money is stored as **integer paise** and dates as ISO `YYYY-MM-DD` strings, matching
+the web backend. The finance calculations (portfolio, net worth, loan/debt health,
+goal timeline, protection summary, benchmark, financial-health score) are direct
+ports of `services.py`.
 
-### Other setup steps
+## Run
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+This is a **prebuilt** project (native `android/` and `ios/` already generated).
 
-## Learn more
+```bash
+npm install            # if not already installed
+npm run android        # build + run on an Android device/emulator
+npm run ios            # build + run on iOS (macOS + Xcode)
+npm start              # Metro only (e.g. with a dev client)
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+> Building the native app requires Android Studio (Android) or Xcode (iOS).
+> On first launch the database is created and seeded with demo data so every
+> screen is populated.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Validate without a device
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+npx tsc --noEmit                                            # type-check
+npx expo export --platform android --output-dir /tmp/out    # full Metro bundle
+```
