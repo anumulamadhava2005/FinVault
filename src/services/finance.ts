@@ -3,7 +3,7 @@
  * over rows already loaded from SQLite. Money is paise; dates are ISO strings.
  */
 import { all, first } from '../db';
-import type { Asset, FinancialGoal, InsurancePolicy, Loan } from '../models/types';
+import type { Asset, FinancialGoal, InsurancePolicy, Loan, VaultCredential } from '../models/types';
 import { parseISO, daysBetween, monthsBetween, todayISO } from '../utils/date';
 import { pct } from '../utils/money';
 import {
@@ -428,6 +428,265 @@ export const incomeExpenseSeries = (userId: string, months = 6) => {
   return { labels, income, expenses };
 };
 
+const getMonthBounds = (year: number, month: number) => {
+  const s = `${year}-${String(month).padStart(2, '0')}-01`;
+  const e = `${year}-${String(month).padStart(2, '0')}-31`;
+  return { start: s, end: e };
+};
+
+const _sumExpensesYear = (userId: string, year: number): number => {
+  const start = `${year}-01-01`;
+  const end = `${year}-12-31`;
+  const res = first<{ t: number }>(
+    'SELECT COALESCE(SUM(amount), 0) AS t FROM expenses WHERE user_id = ? AND expense_date >= ? AND expense_date <= ?',
+    [userId, start, end]
+  );
+  return res?.t || 0;
+};
+
+const _sumExpenses = (userId: string, year: number, month: number): number => {
+  const { start, end } = getMonthBounds(year, month);
+  const res = first<{ t: number }>(
+    'SELECT COALESCE(SUM(amount), 0) AS t FROM expenses WHERE user_id = ? AND expense_date >= ? AND expense_date <= ?',
+    [userId, start, end]
+  );
+  return res?.t || 0;
+};
+
+const _categoryRows = (userId: string, start: string, end: string) => {
+  const rows = all<{ amount: number; category_id: string; name: string; color_hex: string; budget_amount: number }>(
+    `SELECT e.amount, e.category_id, c.name, c.color_hex, c.budget_amount
+     FROM expenses e JOIN expense_categories c ON c.id = e.category_id
+     WHERE e.user_id = ? AND e.expense_date >= ? AND e.expense_date <= ?`,
+    [userId, start, end],
+  );
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const byCat = new Map<string, { id: string; name: string; color: string; budget: number; amount: number }>();
+  for (const r of rows) {
+    const e = byCat.get(r.category_id) || { id: r.category_id, name: r.name, color: r.color_hex, budget: r.budget_amount, amount: 0 };
+    e.amount += r.amount;
+    byCat.set(r.category_id, e);
+  }
+  const categories = [...byCat.values()]
+    .map((c) => ({
+      ...c,
+      pct: pct(c.amount, total),
+      utilized: c.budget ? Math.round((c.amount / c.budget) * 100) : 0,
+      over_budget: !!c.budget && c.amount > c.budget,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+  return { expenses: rows, total, categories };
+};
+
+export interface ExpenseAnalyticsData {
+  trend_type: 'monthly' | 'yearly';
+  year: number;
+  month: number;
+  labels: string[];
+  values: number[];
+  summary: {
+    total: number;
+    avg_daily: number;
+    count: number;
+    highest_category: string;
+    highest_category_amount: number;
+  };
+  trend: {
+    change_pct: number;
+    period_label: string;
+    prev_label: string;
+    highest: { label: string; value: number } | null;
+    lowest: { label: string; value: number } | null;
+    direction: string;
+  };
+  categories: any[];
+  top_categories: any[];
+  comparison: {
+    cur_total: number;
+    prev_total: number;
+    change_pct: number;
+    prev_label: string;
+  };
+}
+
+export const expenseAnalytics = (
+  userId: string,
+  trendType: 'monthly' | 'yearly' = 'monthly',
+  year?: number,
+  month?: number,
+): ExpenseAnalyticsData => {
+  const t = new Date();
+  const currentYear = t.getFullYear();
+  const currentMonth = t.getMonth() + 1;
+
+  const selYear = year || currentYear;
+  const selMonth = month || currentMonth;
+
+  let labels: string[] = [];
+  let values: number[] = [];
+  let pStart = '';
+  let pEnd = '';
+  let prevStart = '';
+  let prevEnd = '';
+  let periodLabel = '';
+  let prevLabel = '';
+  let days = 30;
+
+  if (trendType === 'yearly') {
+    const seen = new Set<number>();
+    seen.add(currentYear);
+    const expDates = all<{ d: string }>('SELECT DISTINCT SUBSTR(expense_date, 1, 4) AS d FROM expenses WHERE user_id = ?', [userId]);
+    for (const row of expDates) {
+      if (row.d) seen.add(parseInt(row.d, 10));
+    }
+    const incDates = all<{ d: string }>('SELECT DISTINCT SUBSTR(income_date, 1, 4) AS d FROM income WHERE user_id = ?', [userId]);
+    for (const row of incDates) {
+      if (row.d) seen.add(parseInt(row.d, 10));
+    }
+    const sortedYears = Array.from(seen).sort((a, b) => a - b);
+    const span = sortedYears.slice(-6);
+    labels = span.map((y) => String(y));
+    values = span.map((y) => _sumExpensesYear(userId, y));
+
+    pStart = `${selYear}-01-01`;
+    pEnd = `${selYear}-12-31`;
+    prevStart = `${selYear - 1}-01-01`;
+    prevEnd = `${selYear - 1}-12-31`;
+    periodLabel = String(selYear);
+    prevLabel = String(selYear - 1);
+
+    const isLeap = (selYear % 4 === 0 && selYear % 100 !== 0) || selYear % 400 === 0;
+    days = isLeap ? 366 : 365;
+  } else {
+    const lastMonth = selYear === currentYear ? currentMonth : 12;
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    labels = monthNames.slice(0, lastMonth);
+    values = Array.from({ length: lastMonth }, (_, idx) => _sumExpenses(userId, selYear, idx + 1));
+
+    const curBounds = getMonthBounds(selYear, selMonth);
+    pStart = curBounds.start;
+    pEnd = curBounds.end;
+
+    const pm = selMonth === 1 ? 12 : selMonth - 1;
+    const py = selMonth === 1 ? selYear - 1 : selYear;
+    const prevBounds = getMonthBounds(py, pm);
+    prevStart = prevBounds.start;
+    prevEnd = prevBounds.end;
+
+    periodLabel = `${monthNames[selMonth - 1]} ${selYear}`;
+    prevLabel = `${monthNames[pm - 1]} ${py}`;
+    days = new Date(selYear, selMonth, 0).getDate();
+  }
+
+  const curData = _categoryRows(userId, pStart, pEnd);
+  const prevData = _categoryRows(userId, prevStart, prevEnd);
+
+  const prevByName = new Map<string, number>();
+  for (const c of prevData.categories) {
+    prevByName.set(c.name, c.amount);
+  }
+
+  const categories = curData.categories.map((c) => {
+    const prevAmt = prevByName.get(c.name) || 0;
+    const diff = c.amount - prevAmt;
+    const changePct = prevAmt ? Math.round((diff / prevAmt) * 100) : (c.amount ? 100 : 0);
+    return {
+      ...c,
+      prev: prevAmt,
+      change_pct: changePct,
+    };
+  });
+
+  const changePct = prevData.total ? Number((((curData.total - prevData.total) / prevData.total) * 100).toFixed(1)) : 0;
+
+  const series = labels.map((lbl, idx) => ({ label: lbl, value: values[idx] })).filter((item) => item.value > 0);
+  const hi = series.length ? series.reduce((a, b) => (a.value > b.value ? a : b)) : null;
+  const lo = series.length ? series.reduce((a, b) => (a.value < b.value ? a : b)) : null;
+
+  const highest = categories[0] || null;
+
+  return {
+    trend_type: trendType,
+    year: selYear,
+    month: selMonth,
+    labels,
+    values,
+    summary: {
+      total: curData.total,
+      avg_daily: days ? Math.round(curData.total / days) : 0,
+      count: curData.expenses.length,
+      highest_category: highest ? highest.name : '—',
+      highest_category_amount: highest ? highest.amount : 0,
+    },
+    trend: {
+      change_pct: changePct,
+      period_label: periodLabel,
+      prev_label: prevLabel,
+      highest: hi,
+      lowest: lo,
+      direction: changePct > 5 ? 'Rising Trend' : changePct < -5 ? 'Falling Trend' : 'Stable Trend',
+    },
+    categories,
+    top_categories: categories.slice(0, 3),
+    comparison: {
+      cur_total: curData.total,
+      prev_total: prevData.total,
+      change_pct: changePct,
+      prev_label: prevLabel,
+    },
+  };
+};
+
+const formatRupees = (paise: number): string => {
+  return `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
+};
+
+export const generateSpendingInsights = (
+  userId: string,
+  trendType: 'monthly' | 'yearly' = 'monthly',
+  year?: number,
+  month?: number,
+): string[] => {
+  const a = expenseAnalytics(userId, trendType, year, month);
+  const cmp = a.comparison;
+  const out: string[] = [];
+
+  if (cmp.prev_total && cmp.change_pct >= 5) {
+    out.push(`Total spending increased by ${Math.abs(cmp.change_pct)}% vs ${cmp.prev_label}.`);
+  } else if (cmp.prev_total && cmp.change_pct <= -5) {
+    out.push(`Total spending dropped ${Math.abs(cmp.change_pct)}% vs ${cmp.prev_label} — nice control.`);
+  }
+
+  for (const c of a.categories.slice(0, 6)) {
+    if (c.prev && c.change_pct >= 20) {
+      out.push(`${c.name} spending increased by ${c.change_pct}%.`);
+    }
+  }
+
+  if (a.top_categories.length > 0) {
+    const t = a.top_categories[0];
+    out.push(`${t.name} is your highest category at ${formatRupees(t.amount)} (${t.pct}% of spend).`);
+  }
+
+  const topThreeTotal = a.top_categories.reduce((sum, c) => sum + c.amount, 0);
+  const save = Math.round(topThreeTotal * 0.10);
+  if (save > 0) {
+    out.push(`You can save about ${formatRupees(save)} by reducing your top categories by 10%.`);
+  }
+
+  if (a.top_categories.length >= 3) {
+    const names = a.top_categories.slice(0, 3).map((c) => c.name).join(', ');
+    out.push(`Top 3 categories: ${names}.`);
+  }
+
+  if (out.length === 0) {
+    out.push('Spending looks steady — no notable changes this period.');
+  }
+
+  return out;
+};
+
+
 // --- Financial health (weighted, rule-based) --------------------------------
 
 export const financialHealth = (userId: string, riskProfile = 'moderate') => {
@@ -495,3 +754,12 @@ export const financialHealth = (userId: string, riskProfile = 'moderate') => {
     insights: insights.slice(0, 4),
   };
 };
+
+export const passwordHealth = (userId: string) => {
+  const creds = all<VaultCredential>('SELECT * FROM vault_credentials WHERE user_id = ?', [userId]);
+  const weak = creds.filter((c) => c.password_strength < 50).length;
+  const strong = creds.filter((c) => c.password_strength >= 75).length;
+  const avg = creds.length ? Math.round(creds.reduce((s, c) => s + c.password_strength, 0) / creds.length) : 0;
+  return { total: creds.length, weak, strong, score: avg };
+};
+
