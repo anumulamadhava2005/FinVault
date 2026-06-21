@@ -1,6 +1,13 @@
 /** Date helpers. Dates are stored as ISO "YYYY-MM-DD" strings (web-app parity). */
 
-export const todayISO = (): string => new Date().toISOString().slice(0, 10);
+export const localISODate = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+export const todayISO = (): string => localISODate(new Date());
 
 export const nowISO = (): string => new Date().toISOString();
 
