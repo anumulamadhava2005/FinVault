@@ -42,7 +42,17 @@ CREATE TABLE IF NOT EXISTS assets (
   current_value INTEGER NOT NULL DEFAULT 0,
   quantity REAL NOT NULL DEFAULT 0,
   purchase_date TEXT,
+  investment_date TEXT,
   notes TEXT,
+  isin TEXT,
+  ticker TEXT,
+  is_sip INTEGER NOT NULL DEFAULT 0,
+  sip_monthly_amount INTEGER NOT NULL DEFAULT 0,
+  current_nav REAL,
+  price_per_unit REAL,
+  maturity_date TEXT,
+  guaranteed_return_pct REAL,
+  details_json TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -53,7 +63,21 @@ CREATE TABLE IF NOT EXISTS sip_schedules (
   amount INTEGER NOT NULL DEFAULT 0,
   frequency TEXT NOT NULL DEFAULT 'monthly',
   next_due_date TEXT,
-  status TEXT NOT NULL DEFAULT 'active'
+  status TEXT NOT NULL DEFAULT 'active',
+  day_of_month INTEGER,
+  annual_step_up_pct REAL NOT NULL DEFAULT 0,
+  start_date TEXT,
+  end_date TEXT,
+  linked_bank TEXT
+);
+
+CREATE TABLE IF NOT EXISTS asset_images (
+  id TEXT PRIMARY KEY,
+  asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uri TEXT NOT NULL,
+  label TEXT,
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS expense_categories (

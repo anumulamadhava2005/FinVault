@@ -44,8 +44,11 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
       ['Mutual Funds', 'mutual_fund'],
       ['Equity', 'equity'],
       ['Fixed Deposit', 'fd'],
-      ['Gold', 'gold'],
       ['Real Estate', 'real_estate'],
+      ['Digital Gold', 'digital_gold'],
+      ['Gold', 'physical_gold'],
+      ['Sovereign Gold Bond', 'sgb'],
+      ['PPF', 'ppf'],
     ].forEach(([name, slug], i) => {
       const id = uid();
       types[slug] = id;
@@ -59,6 +62,7 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
       invested: number,
       current: number,
       qty = 0,
+      extra: Record<string, unknown> = {},
     ) => {
       const id = uid();
       ins('assets', {
@@ -70,16 +74,78 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
         current_value: R(current),
         quantity: qty,
         purchase_date: '2022-06-15',
+        investment_date: '2022-06-15',
+        is_sip: 0,
+        sip_monthly_amount: 0,
         notes: null,
         created_at: '2024-01-01',
+        ...extra,
       });
       return id;
     };
-    const aMidcap = A('mutual_fund', 'HDFC Mid Cap Fund', 800000, 1756000, 12000);
-    const aEquity = A('equity', 'Reliance Industries', 500000, 763000, 250);
-    const aGold = A('gold', 'SBI Gold ETF', 100000, 138000, 30);
-    const aFd = A('fd', 'Emergency FD', 300000, 318000);
-    A('mutual_fund', 'ICICI Bluechip Fund', 350000, 412000, 9000);
+    const aMidcap = A('mutual_fund', 'HDFC Mid Cap Fund', 800000, 1756000, 12000, {
+      isin: 'INF179K01AA4',
+      is_sip: 1,
+      sip_monthly_amount: R(5000),
+      current_nav: 146.33,
+    });
+    const aEquity = A('equity', 'Reliance Industries', 500000, 763000, 250, {
+      ticker: 'RELIANCE.NS',
+      price_per_unit: 3052.0,
+    });
+    const aGold = A('digital_gold', 'SBI Gold ETF', 100000, 138000, 30);
+    const aFd = A('fd', 'Emergency FD', 300000, 318000, 0, {
+      maturity_date: '2027-06-15',
+      guaranteed_return_pct: 7.25,
+      details_json: JSON.stringify({ bank_name: 'SBI', account_no: 'FD-99001', nominee: 'Priya Sharma' }),
+    });
+    A('mutual_fund', 'ICICI Bluechip Fund', 350000, 412000, 9000, {
+      isin: 'INF109K01014',
+      is_sip: 1,
+      sip_monthly_amount: R(3000),
+      current_nav: 45.78,
+    });
+    A('digital_gold', 'PhonePe Digital Gold', 50000, 68000, 15.5, {
+      price_per_unit: 7120.0,
+      details_json: JSON.stringify({ purity: '24K' }),
+    });
+    A('sgb', 'SGB 2022-23 Series IV', 120000, 156000, 20, {
+      isin: 'IN0020220120',
+      maturity_date: '2030-11-28',
+      guaranteed_return_pct: 2.5,
+      price_per_unit: 7800.0,
+    });
+    A('ppf', 'PPF Account', 150000, 178000, 0, {
+      maturity_date: '2036-04-01',
+      guaranteed_return_pct: 7.1,
+      details_json: JSON.stringify({ bank_name: 'Post Office', account_no: 'PPF-LKO-001', nominee: 'Aarav Sharma Jr' }),
+    });
+    A('real_estate', 'Lucknow Flat', 4500000, 5800000, 0, {
+      details_json: JSON.stringify({ area_sqft: '1200', location: 'Gomti Nagar, Lucknow' }),
+    });
+
+    // --- SIP schedules ---
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    const nextDue = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
+    [
+      [aMidcap, R(5000)],
+    ].forEach(([assetId, amount]) => {
+      ins('sip_schedules', {
+        id: uid(),
+        user_id: userId,
+        asset_id: assetId,
+        amount,
+        frequency: 'monthly',
+        next_due_date: nextDue,
+        status: 'active',
+        day_of_month: 1,
+        annual_step_up_pct: 10,
+        start_date: '2022-07-01',
+        end_date: null,
+        linked_bank: null,
+      });
+    });
 
     // --- Goals (linked to assets; progress = sum of linked current values) ---
     const G = (

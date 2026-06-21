@@ -39,7 +39,26 @@ export interface Asset {
   current_value: number; // paise
   quantity: number;
   purchase_date: string | null;
+  investment_date: string | null;
   notes: string | null;
+  isin: string | null;
+  ticker: string | null;
+  is_sip: boolean;
+  sip_monthly_amount: number; // paise
+  current_nav: number | null;
+  price_per_unit: number | null;
+  maturity_date: string | null;
+  guaranteed_return_pct: number | null;
+  details_json: string | null;
+  created_at: string;
+}
+
+export interface AssetImage {
+  id: string;
+  asset_id: string;
+  user_id: string;
+  uri: string;
+  label: string | null;
   created_at: string;
 }
 
@@ -51,6 +70,11 @@ export interface SIPSchedule {
   frequency: string; // monthly|quarterly
   next_due_date: string | null;
   status: string; // active|paused
+  day_of_month: number | null;
+  annual_step_up_pct: number;
+  start_date: string | null;
+  end_date: string | null;
+  linked_bank: string | null;
 }
 
 export interface ExpenseCategory {
@@ -198,4 +222,23 @@ export interface Notification {
   kind: string;
   is_read: boolean;
   created_at: string;
+}
+
+export interface PortfolioAllocationRow {
+  type: string;
+  value: number;
+  invested: number;
+  count: number;
+  pct: number;
+}
+
+export interface PortfolioSummaryResult {
+  total_invested: number;
+  total_value: number;
+  total_pnl: number;
+  pnl_pct: number;
+  asset_count: number;
+  monthly_sip: number;
+  active_sips: number;
+  allocation: PortfolioAllocationRow[];
 }

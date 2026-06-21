@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.mao1729.FinVault"
+      "package": "com.mao1729.FinVault",
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "output": "static",
@@ -37,8 +38,21 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "@react-native-community/datetimepicker",
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FinVault needs access to your photos to attach images to assets.",
+          "cameraPermission": "FinVault needs camera access to photograph asset documents."
+        }
+      ],
+      "expo-sharing"
     ],
+    "extra": {
+      "apiBaseUrl": "https://api.finvault.local"
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

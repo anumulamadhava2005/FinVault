@@ -14,7 +14,7 @@ import {
 import { Screen, SectionCard, Kpi, Row, LineItem, ProgressBar } from '../components/ui';
 import { DistributionPie, TrendLine } from '../components/charts';
 import { chartColors, palette, statusColor } from '../theme';
-import { formatINR } from '../utils/money';
+import { formatINR, scoreColor } from '../utils/money';
 
 const DashboardScreen: React.FC = () => {
   const { userId } = useApp();
@@ -88,7 +88,7 @@ const DashboardScreen: React.FC = () => {
         {goals.goals.map((g) => (
           <View key={g.id} style={{ marginBottom: 10 }}>
             <LineItem label={g.name} value={`${g.pct}%`} />
-            <ProgressBar pct={g.pct} color={statusColor(g.status_tone)} markerPct={g.expected_pct} />
+            <ProgressBar pct={g.pct} color={statusColor(scoreColor(g.pct))} markerPct={g.expected_pct} />
           </View>
         ))}
       </SectionCard>

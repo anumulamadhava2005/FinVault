@@ -51,6 +51,16 @@ export const GOAL_TYPES: [string, string][] = [
   ['wedding', 'Wedding'],
   ['custom', 'Custom'],
 ];
+export const GOAL_TYPE_LABELS: Record<string, string> = Object.fromEntries(GOAL_TYPES);
+export const GOAL_TYPE_COLORS: Record<string, string> = {
+  retirement: '#4A90E2',
+  education: '#7B68EE',
+  travel: '#2FA86B',
+  emergency: '#E05C5C',
+  home: '#F0B429',
+  wedding: '#EC4899',
+  custom: '#2F8F6F',
+};
 
 export const FREQ_PER_YEAR: Record<string, number> = {
   monthly: 12,
@@ -77,10 +87,22 @@ export const BENCHMARKS: Record<string, Record<string, number>> = {
   aggressive: { Equity: 60, 'Mutual Funds': 20, 'Fixed Deposit': 5, PPF: 5, 'Sovereign Gold Bond': 5, 'Digital/Physical Gold': 5 },
 };
 export const BENCH_CLASS: Record<string, string> = {
-  Gold: 'Digital/Physical Gold',
   'Digital Gold': 'Digital/Physical Gold',
-  'Physical Gold': 'Digital/Physical Gold',
+  Gold: 'Digital/Physical Gold',
 };
 
 export const titleCase = (s: string) =>
   s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+export const SIP_ELIGIBLE_TYPES = new Set(['mutual_fund', 'equity', 'digital_gold', 'ppf']);
+
+export const ASSET_TYPE_KEY_MAP: Record<string, string> = {
+  mutual_fund: 'Mutual Funds',
+  equity: 'Equity',
+  fd: 'Fixed Deposit',
+  digital_gold: 'Digital Gold',
+  physical_gold: 'Gold',
+  sgb: 'Sovereign Gold Bond',
+  ppf: 'PPF',
+  real_estate: 'Real Estate',
+};

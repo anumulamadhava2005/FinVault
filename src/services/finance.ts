@@ -54,12 +54,25 @@ export const portfolioSummary = (userId: string) => {
   const allocation: AllocationRow[] = [...byType.entries()]
     .map(([type, v]) => ({ type, ...v, pct: pct(v.value, total_value) }))
     .sort((a, b) => b.value - a.value);
+
+  // Sum sip_monthly_amount from assets directly — this covers all SIP-enabled
+  // assets regardless of whether a sip_schedule row exists.
+  const sipRow = first<{ monthly_sip: number; active_sips: number }>(
+    `SELECT COALESCE(SUM(sip_monthly_amount), 0) AS monthly_sip,
+            COUNT(*) AS active_sips
+     FROM assets
+     WHERE user_id = ? AND is_sip = 1 AND sip_monthly_amount > 0`,
+    [userId],
+  );
+
   return {
     total_invested,
     total_value,
     total_pnl,
     pnl_pct: total_invested ? Number(((total_pnl / total_invested) * 100).toFixed(2)) : 0,
     asset_count: assets.length,
+    monthly_sip: sipRow?.monthly_sip ?? 0,
+    active_sips: sipRow?.active_sips ?? 0,
     allocation,
   };
 };
@@ -278,6 +291,7 @@ export const GOAL_STATUS_META: Record<GoalTimeline['status'], { label: string; i
 };
 
 export const goalsProgress = (userId: string) => {
+  if (__DEV__) console.time('goalsProgress');
   const goals = all<FinancialGoal>('SELECT * FROM financial_goals WHERE user_id = ?', [userId]);
   let total_target = 0;
   let total_current = 0;
@@ -288,7 +302,7 @@ export const goalsProgress = (userId: string) => {
        JOIN assets a ON a.id = gal.asset_id WHERE gal.goal_id = ?`,
       [g.id],
     );
-    const current = links.reduce((s, l) => s + Math.round((l.current_value * l.allocation_pct) / 100), 0);
+    const current = links.reduce((s, l) => s + Math.round((l.current_value * (l.allocation_pct ?? 100)) / 100), 0);
     const p = pct(current, g.target_amount);
     const tl = goalTimeline(parseISO(g.created_at), parseISO(g.target_date), g.target_amount, current);
     const meta = GOAL_STATUS_META[tl.status];
@@ -310,6 +324,7 @@ export const goalsProgress = (userId: string) => {
       required_monthly: tl.required_monthly,
     };
   });
+  if (__DEV__) console.timeEnd('goalsProgress');
   return {
     goals: out,
     total_target,
