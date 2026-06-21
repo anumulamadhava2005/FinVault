@@ -40,6 +40,7 @@ export const chartColors = {
   expense: '#E05C5C',
   achieved: '#2FA86B',
   target: '#9DD1C2',
+  goalTarget: '#C2E033',
   recommended: '#D4956A',
   yours: '#4A7C6F',
 };

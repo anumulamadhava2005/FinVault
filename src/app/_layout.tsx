@@ -77,7 +77,7 @@ const Navigator: React.FC = () => {
         }}
       >
         <Drawer.Screen name="index" options={{ title: 'Dashboard', drawerIcon: drawerIcon('view-dashboard') }} />
-        <Drawer.Screen name="assets" options={{ title: 'Assets', drawerIcon: drawerIcon('chart-line') }} />
+        <Drawer.Screen name="assets" options={{ title: 'Assets', drawerIcon: drawerIcon('chart-line'), headerShown: false }} />
         <Drawer.Screen name="expenses" options={{ title: 'Expenses', drawerIcon: drawerIcon('cash-multiple') }} />
         <Drawer.Screen name="loans" options={{ title: 'Loans', drawerIcon: drawerIcon('bank') }} />
         <Drawer.Screen name="protect" options={{ title: 'Protect', drawerIcon: drawerIcon('shield-check') }} />

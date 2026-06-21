@@ -34,8 +34,9 @@ export const SectionCard: React.FC<{
   right?: React.ReactNode;
   children: React.ReactNode;
   style?: ViewStyle;
-}> = ({ title, right, children, style }) => (
-  <Card style={[styles.card, style]} mode="elevated">
+  onPress?: () => void;
+}> = ({ title, right, children, style, onPress }) => (
+  <Card style={[styles.card, style]} mode="elevated" onPress={onPress}>
     <Card.Content>
       {(title || right) && (
         <View style={styles.cardHead}>
@@ -164,7 +165,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'stretch' },
   card: { borderRadius: 16 },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  cardTitle: { fontWeight: '800' },
+  cardTitle: { fontWeight: '800', flex: 1 },
   kpi: { borderRadius: 14 },
   barTrack: { width: '100%', borderRadius: 999, overflow: 'hidden', position: 'relative' },
   paceMarker: { position: 'absolute', top: 0, bottom: 0, width: 3, marginLeft: -1, borderRadius: 2 },

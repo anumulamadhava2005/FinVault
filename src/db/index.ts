@@ -17,10 +17,48 @@ export const getDb = (): SQLite.SQLiteDatabase => {
 /** UUID generator (expo-crypto). */
 export const newId = (): string => Crypto.randomUUID();
 
+const COLUMN_MIGRATIONS = [
+  'ALTER TABLE assets ADD COLUMN investment_date TEXT',
+  'ALTER TABLE assets ADD COLUMN isin TEXT',
+  'ALTER TABLE assets ADD COLUMN ticker TEXT',
+  'ALTER TABLE assets ADD COLUMN is_sip INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE assets ADD COLUMN sip_monthly_amount INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE assets ADD COLUMN current_nav REAL',
+  'ALTER TABLE assets ADD COLUMN price_per_unit REAL',
+  'ALTER TABLE assets ADD COLUMN maturity_date TEXT',
+  'ALTER TABLE assets ADD COLUMN guaranteed_return_pct REAL',
+  'ALTER TABLE assets ADD COLUMN details_json TEXT',
+  'ALTER TABLE sip_schedules ADD COLUMN day_of_month INTEGER',
+  'ALTER TABLE sip_schedules ADD COLUMN annual_step_up_pct REAL NOT NULL DEFAULT 0',
+  'ALTER TABLE sip_schedules ADD COLUMN start_date TEXT',
+  'ALTER TABLE sip_schedules ADD COLUMN end_date TEXT',
+  'ALTER TABLE sip_schedules ADD COLUMN linked_bank TEXT',
+];
+
+// Idempotent data fixes that run on every startup to correct existing databases.
+const DATA_FIXES = [
+  // 1. Re-point any assets that used the old standalone 'gold' type to 'digital_gold'
+  `UPDATE assets
+   SET asset_type_id = (SELECT id FROM asset_types WHERE slug = 'digital_gold' LIMIT 1)
+   WHERE asset_type_id IN (SELECT id FROM asset_types WHERE slug = 'gold')`,
+  // 2. Delete the standalone 'Gold' asset type so it no longer appears in dropdowns
+  `DELETE FROM asset_types WHERE slug = 'gold'`,
+  // 3. Ensure 'digital_gold' is named 'Digital Gold'
+  `UPDATE asset_types SET name = 'Digital Gold' WHERE slug = 'digital_gold' AND name != 'Digital Gold'`,
+  // 4. Rename 'Physical Gold' to 'Gold'
+  `UPDATE asset_types SET name = 'Gold' WHERE slug = 'physical_gold' AND name != 'Gold'`,
+];
+
 /** Initialise schema + seed once. Returns the single user's id. */
 export const initDb = (): string => {
   const db = getDb();
   db.execSync(SCHEMA);
+  for (const sql of COLUMN_MIGRATIONS) {
+    try { db.runSync(sql); } catch { /* column already exists */ }
+  }
+  for (const sql of DATA_FIXES) {
+    try { db.runSync(sql); } catch { /* safe to ignore */ }
+  }
   const existing = db.getFirstSync<{ id: string }>('SELECT id FROM users LIMIT 1');
   if (existing) return existing.id;
   return seedDemoData(db);

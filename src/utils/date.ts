@@ -1,5 +1,6 @@
 /** Date helpers. Dates are stored as ISO "YYYY-MM-DD" strings (web-app parity). */
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
 export const localISODate = (d: Date): string => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -9,7 +10,15 @@ export const localISODate = (d: Date): string => {
 
 export const todayISO = (): string => localISODate(new Date());
 
-export const nowISO = (): string => new Date().toISOString();
+export const todayISO = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
+export const nowISO = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+};
 
 export const parseISO = (value?: string | null): Date | null => {
   if (!value) return null;
