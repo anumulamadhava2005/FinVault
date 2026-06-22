@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import {
   Button,
@@ -137,6 +137,11 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
     setResult(null);
   };
 
+  // Guarantee a clean slate whenever the modal opens
+  useEffect(() => {
+    if (visible) reset();
+  }, [visible]);
+
   const handleDismiss = () => {
     reset();
     onDismiss();
@@ -246,7 +251,6 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
     setResult({ imported, failed });
     setStep('result');
-    if (imported > 0) onImported(imported);
   };
 
   const previewRows = rows.slice(0, 2);
@@ -399,7 +403,10 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
               )}
             </Dialog.Content>
             <Dialog.Actions>
-              <Button mode="contained" onPress={handleDismiss}>Done</Button>
+              <Button mode="contained" onPress={() => {
+                if (result && result.imported > 0) onImported(result.imported);
+                else handleDismiss();
+              }}>Done</Button>
             </Dialog.Actions>
           </>
         )}

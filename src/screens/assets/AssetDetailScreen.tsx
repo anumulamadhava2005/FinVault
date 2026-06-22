@@ -4,7 +4,7 @@ import { Button, Checkbox, Dialog, Portal, Text, TextInput, useTheme } from 'rea
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { File, Directory, Paths } from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system/next';
 import * as Sharing from 'expo-sharing';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -194,11 +194,7 @@ const AssetDetailScreen: React.FC = () => {
 
   const openDocument = async (uri: string, filename: string) => {
     try {
-      const file = new File(uri);
-      if (!file.exists) {
-        Alert.alert('File not found', 'This document is no longer available on this device.');
-        return;
-      }
+      // Use expo-file-system/next File API only if needed; share directly with URI
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
         Alert.alert('Cannot open', 'No document viewer is available on this device.');
@@ -209,8 +205,13 @@ const AssetDetailScreen: React.FC = () => {
         dialogTitle: `Open ${filename}`,
         UTI: getMimeType(filename),
       });
-    } catch {
-      Alert.alert('Cannot open', 'Unable to open this document. Please check that a compatible app is installed.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      if (msg.includes('no such file') || msg.includes('not found') || msg.includes('ENOENT')) {
+        Alert.alert('File not found', 'This document is no longer available on this device. It may have been deleted.');
+      } else {
+        Alert.alert('Cannot open', `Unable to open this document: ${msg}`);
+      }
     }
   };
 

@@ -1,18 +1,17 @@
 /** Date helpers. Dates are stored as ISO "YYYY-MM-DD" strings (web-app parity). */
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
+
+export const todayISO = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
 export const localISODate = (d: Date): string => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
-};
-
-export const todayISO = (): string => localISODate(new Date());
-
-export const todayISO = (): string => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
 export const nowISO = (): string => {
@@ -51,3 +50,20 @@ export const formatDisplayDate = (iso?: string | null): string => {
   if (!d) return '—';
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
+
+/** Human-readable relative time, e.g. "2 hours ago", "Just now". */
+export const timeAgo = (iso?: string | null): string => {
+  if (!iso) return 'Never';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return 'Never';
+  const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return formatDisplayDate(iso.slice(0, 10));
+};
+

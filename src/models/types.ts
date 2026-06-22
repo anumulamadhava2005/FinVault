@@ -50,6 +50,7 @@ export interface Asset {
   maturity_date: string | null;
   guaranteed_return_pct: number | null;
   details_json: string | null;
+  last_price_updated_at: string | null;
   created_at: string;
 }
 

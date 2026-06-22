@@ -67,14 +67,19 @@ export const Kpi: React.FC<{ label: string; value: string; sub?: string; subTone
   return (
     <Card style={[styles.kpi, flex && { flex: 1 }]} mode="contained">
       <Card.Content style={{ paddingVertical: 12 }}>
-        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 10 }}>
           {label}
         </Text>
-        <Text variant="titleMedium" style={{ fontWeight: '800', marginTop: 2 }}>
+        <Text
+          variant="titleMedium"
+          style={{ fontWeight: '800', marginTop: 2, fontVariant: ['tabular-nums'], fontSize: 15 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
           {value}
         </Text>
         {sub ? (
-          <Text variant="bodySmall" style={{ color: subColor, marginTop: 1 }}>
+          <Text variant="bodySmall" style={{ color: subColor, marginTop: 1, fontVariant: ['tabular-nums'], fontSize: 12 }}>
             {sub}
           </Text>
         ) : null}

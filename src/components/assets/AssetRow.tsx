@@ -72,7 +72,7 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({ asset: a, onEdit, onDele
 
       {cagr !== 0 && (
         <View style={{ marginTop: 4, alignItems: 'flex-end' }}>
-          <Text variant="labelSmall" style={{ color: cagr >= 0 ? palette.good : palette.danger }}>
+          <Text variant="labelSmall" style={{ color: cagr >= 0 ? palette.good : palette.danger, fontVariant: ['tabular-nums'] }}>
             CAGR {cagr >= 0 ? '+' : ''}{cagr}%
           </Text>
         </View>
@@ -81,7 +81,7 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({ asset: a, onEdit, onDele
       {a.is_sip ? (
         <View style={{ marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <MaterialCommunityIcons name="autorenew" size={12} color={theme.colors.primary} />
-          <Text variant="labelSmall" style={{ color: theme.colors.primary }}>
+          <Text variant="labelSmall" style={{ color: theme.colors.primary, fontVariant: ['tabular-nums'] }}>
             SIP {a.sip_monthly_amount ? `₹${(a.sip_monthly_amount / 100).toLocaleString('en-IN')}/mo` : 'active'}
           </Text>
         </View>

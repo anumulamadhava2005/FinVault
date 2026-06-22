@@ -1,18 +1,21 @@
 /**
  * Hook that refreshes current_value for all holdings by fetching live prices
- * from the backend proxy, then writes updates to SQLite.
+ * from Yahoo Finance / MFAPI.in, then writes updates to SQLite.
+ * Stores `last_price_updated_at` on each updated asset.
  */
 import { useEffect, useRef, useState } from 'react';
 
-import { all, update } from '../../db';
+import { all, first, update } from '../../db';
 import type { Asset } from '../../models/types';
 import { fetchEquityPrice, fetchMutualFundNav, fetchGoldPrice } from '../../api/assets/assetsApi';
+import { nowISO } from '../../utils/date';
 
 type Status = 'idle' | 'loading' | 'done' | 'error';
 
 interface RefreshResult {
   updated: number;
   failed: string[];
+  timestamp: string;
 }
 
 export const useRefreshPrices = (userId: string, onDone?: () => void) => {
@@ -39,6 +42,7 @@ export const useRefreshPrices = (userId: string, onDone?: () => void) => {
 
     let updated = 0;
     const failed: string[] = [];
+    const timestamp = nowISO();
 
     const goldTypes = new Set(['digital_gold', 'physical_gold', 'sgb', 'gold']);
     let goldPricePerGram: number | null = null;
@@ -52,17 +56,45 @@ export const useRefreshPrices = (userId: string, onDone?: () => void) => {
           if (signal.aborted) break;
           if (res.data) {
             const newValue = Math.round(res.data.price * asset.quantity * 100);
-            update('assets', asset.id, { current_value: newValue, price_per_unit: res.data.price });
+            update('assets', asset.id, {
+              current_value: newValue,
+              price_per_unit: res.data.price,
+              last_price_updated_at: timestamp,
+            });
             updated++;
           } else {
             failed.push(asset.name);
           }
-        } else if (asset.slug === 'mutual_fund' && asset.isin) {
-          const res = await fetchMutualFundNav(asset.isin, undefined, signal);
+        } else if (asset.slug === 'mutual_fund' && (asset.name || asset.isin)) {
+          // Try to get cached scheme code from details_json
+          let cachedCode: number | undefined;
+          if (asset.details_json) {
+            try {
+              const details = JSON.parse(asset.details_json);
+              if (details._mfapi_scheme_code) cachedCode = details._mfapi_scheme_code;
+            } catch { /* ignore */ }
+          }
+
+          const searchTerm = asset.name || asset.isin || '';
+          const res = await fetchMutualFundNav(searchTerm, undefined, signal, cachedCode);
           if (signal.aborted) break;
           if (res.data) {
             const newValue = Math.round(res.data.nav * asset.quantity * 100);
-            update('assets', asset.id, { current_value: newValue, current_nav: res.data.nav });
+            const updatePayload: Record<string, unknown> = {
+              current_value: newValue,
+              current_nav: res.data.nav,
+              last_price_updated_at: timestamp,
+            };
+            // Cache the scheme code for faster future lookups
+            if (res.schemeCode && !cachedCode) {
+              let existing: Record<string, unknown> = {};
+              if (asset.details_json) {
+                try { existing = JSON.parse(asset.details_json); } catch { /* ignore */ }
+              }
+              existing._mfapi_scheme_code = res.schemeCode;
+              updatePayload.details_json = JSON.stringify(existing);
+            }
+            update('assets', asset.id, updatePayload);
             updated++;
           } else {
             failed.push(asset.name);
@@ -79,7 +111,11 @@ export const useRefreshPrices = (userId: string, onDone?: () => void) => {
           }
           if (goldPricePerGram && asset.quantity) {
             const newValue = Math.round(goldPricePerGram * asset.quantity * 100);
-            update('assets', asset.id, { current_value: newValue, price_per_unit: goldPricePerGram });
+            update('assets', asset.id, {
+              current_value: newValue,
+              price_per_unit: goldPricePerGram,
+              last_price_updated_at: timestamp,
+            });
             updated++;
           } else if (goldFetchFailed) {
             failed.push(asset.name);
@@ -93,12 +129,18 @@ export const useRefreshPrices = (userId: string, onDone?: () => void) => {
 
     if (signal.aborted) return null;
 
-    const res = { updated, failed };
+    const res = { updated, failed, timestamp };
     setResult(res);
     setStatus(failed.length > 0 && updated === 0 ? 'error' : 'done');
     onDone?.();
     return res;
   };
 
-  return { status, result, errorMsg, refresh };
+  // Query the most recent update timestamp across all assets
+  const lastUpdated = first<{ ts: string | null }>(
+    'SELECT MAX(last_price_updated_at) AS ts FROM assets WHERE user_id = ?',
+    [userId],
+  )?.ts ?? null;
+
+  return { status, result, errorMsg, refresh, lastUpdated };
 };

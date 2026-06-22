@@ -33,6 +33,7 @@ const COLUMN_MIGRATIONS = [
   'ALTER TABLE sip_schedules ADD COLUMN start_date TEXT',
   'ALTER TABLE sip_schedules ADD COLUMN end_date TEXT',
   'ALTER TABLE sip_schedules ADD COLUMN linked_bank TEXT',
+  'ALTER TABLE assets ADD COLUMN last_price_updated_at TEXT',
 ];
 
 // Idempotent data fixes that run on every startup to correct existing databases.

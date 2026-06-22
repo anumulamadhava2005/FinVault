@@ -3,6 +3,7 @@ import { Stack, useNavigation } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '@/context/AppContext';
 import { darkTheme, lightTheme } from '@/theme';
+import NotificationBell from '@/components/NotificationBell';
 
 export default function AssetsLayout() {
   const { isDark } = useApp();
@@ -24,6 +25,12 @@ export default function AssetsLayout() {
             <Pressable onPress={() => drawerNav.openDrawer()} style={{ marginRight: 12 }}>
               <MaterialCommunityIcons name="menu" size={24} color={theme.colors.onSurface} />
             </Pressable>
+          ),
+          headerRight: () => (
+            <NotificationBell
+              color={theme.colors.onSurface}
+              kinds={['sip_due', 'asset_gain', 'asset_loss', 'stale_price']}
+            />
           ),
         }}
       />

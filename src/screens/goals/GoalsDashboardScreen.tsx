@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import {
   Button,
@@ -42,6 +42,7 @@ import GoalRingCard from '../../components/goals/GoalRingCard';
 import GoalTimeline, { type TimelineGoal } from '../../components/goals/GoalTimeline';
 import { useGoalsStore } from '../../stores/goalsStore';
 import type { GoalFilterStatus } from '../../stores/goalsStore';
+import { generateGoalNotifications } from '../../services/notificationService';
 
 const blank = { name: '', goal_type: 'retirement', target: '', target_date: '', monthly: '' };
 
@@ -82,6 +83,11 @@ const GoalsDashboardScreen: React.FC = () => {
     overall_pct: 0,
   };
   const assets = assetsData ?? [];
+
+  // Generate goal notifications on screen load
+  useEffect(() => {
+    try { generateGoalNotifications(userId); } catch { /* non-critical */ }
+  }, [userId, progressData]);
 
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ ...blank });

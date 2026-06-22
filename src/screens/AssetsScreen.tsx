@@ -19,8 +19,9 @@ import SIPModal from '../components/assets/SIPModal';
 import type { SIPConfigValues } from '../hooks/assets/useSIPConfig';
 import { chartColors, palette } from '../theme';
 import { formatINRCompact } from '../utils/money';
-import { nowISO, todayISO } from '../utils/date';
+import { nowISO, todayISO, timeAgo } from '../utils/date';
 import { useRefreshPrices } from '../hooks/assets/useRefreshPrices';
+import { generateAssetNotifications } from '../services/notificationService';
 
 const PIE = ['#4A7C6F', '#7FB5A8', '#D4956A', '#2D3142', '#F0B429', '#52A77E', '#316357', '#9DD1C2'];
 
@@ -52,8 +53,14 @@ const AssetsScreen: React.FC = () => {
   const [sipModalOpen, setSipModalOpen] = useState(false);
   const [currentSip, setCurrentSip] = useState<SIPSchedule | null>(null);
 
-  const { status: refreshStatus, refresh: refreshPrices } = useRefreshPrices(userId, () => {
+  const { status: refreshStatus, refresh: refreshPrices, lastUpdated } = useRefreshPrices(userId, () => {
     refresh();
+  });
+
+  // Generate asset notifications on screen focus
+  useData(() => {
+    try { generateAssetNotifications(userId); } catch { /* non-critical */ }
+    return null;
   });
 
   const handleRefreshPrices = async () => {
@@ -305,6 +312,7 @@ const AssetsScreen: React.FC = () => {
           <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
             {filteredAssets.length} asset{filteredAssets.length !== 1 ? 's' : ''}
             {activeTypeSlug ? ` · ${activeTypeName}` : ''}
+            {lastUpdated ? `  ·  Prices: ${timeAgo(lastUpdated)}` : ''}
           </Text>
         </View>
 
