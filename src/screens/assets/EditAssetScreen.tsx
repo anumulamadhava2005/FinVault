@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert, View } from 'react-native';
-import { ActivityIndicator, Button } from 'react-native-paper';
+import { ActivityIndicator, Button, useTheme } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { useApp } from '../../context/AppContext';
@@ -82,9 +82,11 @@ const EditAssetScreen: React.FC = () => {
     ]);
   };
 
+  const theme = useTheme();
+
   return (
     <Screen>
-      <SectionCard>
+      <SectionCard style={{ marginBottom: 16 }}>
         <AssetForm
           visible
           inline
@@ -96,14 +98,17 @@ const EditAssetScreen: React.FC = () => {
           title="Edit Asset"
         />
       </SectionCard>
-      <Button
-        mode="outlined"
-        icon="delete"
-        textColor={palette.danger}
-        onPress={handleDelete}
-      >
-        Delete Asset
-      </Button>
+      <View style={{ paddingHorizontal: 18 }}>
+        <Button
+          mode="outlined"
+          icon="delete"
+          textColor={palette.danger}
+          style={{ borderRadius: theme.roundness }}
+          onPress={handleDelete}
+        >
+          Delete Asset
+        </Button>
+      </View>
     </Screen>
   );
 };

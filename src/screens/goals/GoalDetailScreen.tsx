@@ -23,7 +23,7 @@ const GoalDetailScreen: React.FC = () => {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: goal, error } = useDataSafe(() => {
-    const prog = goalsProgress(userId);
+    const prog = goalsProgress(userId!);
     return prog.goals.find((g) => g.id === id) ?? null;
   });
 
@@ -81,24 +81,24 @@ const GoalDetailScreen: React.FC = () => {
     <>
       <Stack.Screen options={{ title: goal.name }} />
       <Screen>
-        <SectionCard>
+        <SectionCard style={{ marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <GoalTypeIcon goalType={goal.goal_type} size={32} />
             <View style={{ flex: 1 }}>
-              <Text variant="titleLarge" style={{ fontWeight: '800' }}>{goal.name}</Text>
-              <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>{typeLabel}</Text>
+              <Text variant="titleLarge" style={{ fontWeight: '700' }}>{goal.name}</Text>
+              <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>{typeLabel}</Text>
             </View>
             <StatusChip label={goal.status_label} tone={goal.status_tone} icon={goal.status_icon} />
           </View>
         </SectionCard>
 
-        <SectionCard title="Progress">
+        <SectionCard title="Progress" style={{ marginBottom: 12 }}>
           <Row>
             <Kpi label="Current" value={formatINR(goal.current)} />
             <Kpi label="Target" value={formatINR(goal.target_amount)} />
           </Row>
-          <View style={{ marginTop: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+          <View style={{ marginTop: 14 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
               <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>{goal.pct}% complete</Text>
               {goal.expected_pct > 0 && goal.expected_pct < 100 && (
                 <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>{goal.expected_pct}% expected by now</Text>
@@ -107,36 +107,36 @@ const GoalDetailScreen: React.FC = () => {
             <ProgressBar pct={goal.pct} color={statusColor(scoreColor(goal.pct))} markerPct={goal.expected_pct} height={12} />
           </View>
           {goal.status !== 'completed' && goal.required_monthly > 0 && (
-            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 10 }}>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 12 }}>
               Save ~{formatINR(goal.required_monthly)}/mo to finish on time
             </Text>
           )}
         </SectionCard>
 
-        <SectionCard title="Details">
+        <SectionCard title="Details" style={{ marginBottom: 12 }}>
           <Row>
             <Kpi label="Remaining" value={formatINR(Math.max(goal.target_amount - goal.current, 0))} />
             <Kpi label="Linked Assets" value={String(goal.linked)} />
           </Row>
           {goal.target_date ? (
-            <View style={{ marginTop: 8 }}>
+            <View style={{ marginTop: 12 }}>
               <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, textTransform: 'uppercase' }}>Target date</Text>
-              <Text variant="bodyMedium" style={{ fontWeight: '700', marginTop: 2 }}>{formatDisplayDate(goal.target_date)}</Text>
+              <Text variant="bodyMedium" style={{ fontWeight: '700', marginTop: 4 }}>{formatDisplayDate(goal.target_date)}</Text>
             </View>
           ) : null}
           {goal.notes ? (
-            <View style={{ marginTop: 8 }}>
+            <View style={{ marginTop: 12 }}>
               <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, textTransform: 'uppercase' }}>Notes</Text>
-              <Text variant="bodyMedium" style={{ marginTop: 2 }}>{goal.notes}</Text>
+              <Text variant="bodyMedium" style={{ marginTop: 4 }}>{goal.notes}</Text>
             </View>
           ) : null}
         </SectionCard>
 
         {sharedAssets && sharedAssets.length > 0 && (
-          <SectionCard>
+          <SectionCard style={{ marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
               <Text style={{ color: palette.warn, fontSize: 16 }}>⚠</Text>
-              <Text variant="bodySmall" style={{ color: palette.warn, flex: 1 }}>
+              <Text variant="bodySmall" style={{ color: palette.warn, flex: 1, lineHeight: 18 }}>
                 {sharedAssets.length === 1 ? '1 linked asset is' : `${sharedAssets.length} linked assets are`} also counted in other goals — values may be double-counted.
               </Text>
             </View>
@@ -144,39 +144,41 @@ const GoalDetailScreen: React.FC = () => {
         )}
 
         {assetsError ? (
-          <SectionCard title="Linked Assets">
+          <SectionCard title="Linked Assets" style={{ marginBottom: 12 }}>
             <Text variant="bodySmall" style={{ color: palette.danger }}>
               Failed to load linked assets.
             </Text>
           </SectionCard>
         ) : assets.length === 0 ? (
-          <SectionCard title="Linked Assets">
-            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+          <SectionCard title="Linked Assets" style={{ marginBottom: 12 }}>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, lineHeight: 18 }}>
               No assets linked yet. Tap Edit to link assets and track progress.
             </Text>
           </SectionCard>
         ) : (
-          <SectionCard title="Linked Assets">
-            {assets.map((a) => (
-              <View key={a.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
-                <Text variant="bodyMedium" style={{ flex: 1 }}>{a.name}</Text>
-                {a.allocation_pct < 100 && (
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginRight: 8 }}>
-                    {a.allocation_pct}%
-                  </Text>
-                )}
-                <Text variant="bodyMedium" style={{ fontWeight: '700' }}>{formatINR(a.current_value)}</Text>
-              </View>
-            ))}
+          <SectionCard title="Linked Assets" style={{ marginBottom: 12 }}>
+            <View style={{ gap: 6 }}>
+              {assets.map((a) => (
+                <View key={a.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
+                  <Text variant="bodyMedium" style={{ flex: 1 }}>{a.name}</Text>
+                  {a.allocation_pct < 100 && (
+                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginRight: 8 }}>
+                      {a.allocation_pct}%
+                    </Text>
+                  )}
+                  <Text variant="bodyMedium" style={{ fontWeight: '700' }}>{formatINR(a.current_value)}</Text>
+                </View>
+              ))}
+            </View>
           </SectionCard>
         )}
 
-        <SectionCard>
+        <SectionCard style={{ marginBottom: 24 }}>
           <Row gap={8}>
             <Button
               mode="contained"
               icon="pencil"
-              style={{ flex: 1 }}
+              style={{ flex: 1, borderRadius: theme.roundness }}
               onPress={() => router.push(`/goals/${id}/edit` as any)}
             >
               Edit
@@ -185,7 +187,7 @@ const GoalDetailScreen: React.FC = () => {
               mode="outlined"
               icon="delete"
               textColor={palette.danger}
-              style={{ flex: 1 }}
+              style={{ flex: 1, borderRadius: theme.roundness }}
               onPress={() => setConfirmDelete(true)}
             >
               Delete
@@ -195,7 +197,7 @@ const GoalDetailScreen: React.FC = () => {
       </Screen>
 
       <Portal>
-        <Dialog visible={confirmDelete} onDismiss={() => setConfirmDelete(false)}>
+        <Dialog visible={confirmDelete} onDismiss={() => setConfirmDelete(false)} style={{ borderRadius: theme.roundness }}>
           <Dialog.Title>Delete Goal</Dialog.Title>
           <Dialog.Content>
             <Text>Delete "{goal.name}"? This action cannot be undone.</Text>

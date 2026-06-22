@@ -533,20 +533,9 @@ export const expenseAnalytics = (
   let days = 30;
 
   if (trendType === 'yearly') {
-    const seen = new Set<number>();
-    seen.add(currentYear);
-    const expDates = all<{ d: string }>('SELECT DISTINCT SUBSTR(expense_date, 1, 4) AS d FROM expenses WHERE user_id = ?', [userId]);
-    for (const row of expDates) {
-      if (row.d) seen.add(parseInt(row.d, 10));
-    }
-    const incDates = all<{ d: string }>('SELECT DISTINCT SUBSTR(income_date, 1, 4) AS d FROM income WHERE user_id = ?', [userId]);
-    for (const row of incDates) {
-      if (row.d) seen.add(parseInt(row.d, 10));
-    }
-    const sortedYears = Array.from(seen).sort((a, b) => a - b);
-    const span = sortedYears.slice(-6);
-    labels = span.map((y) => String(y));
-    values = span.map((y) => _sumExpensesYear(userId, y));
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    labels = monthNames;
+    values = Array.from({ length: 12 }, (_, idx) => _sumExpenses(userId, selYear, idx + 1));
 
     pStart = `${selYear}-01-01`;
     pEnd = `${selYear}-12-31`;
@@ -557,15 +546,55 @@ export const expenseAnalytics = (
 
     const isLeap = (selYear % 4 === 0 && selYear % 100 !== 0) || selYear % 400 === 0;
     days = isLeap ? 366 : 365;
-  } else {
-    const lastMonth = selYear === currentYear ? currentMonth : 12;
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    labels = monthNames.slice(0, lastMonth);
-    values = Array.from({ length: lastMonth }, (_, idx) => _sumExpenses(userId, selYear, idx + 1));
 
-    const curBounds = getMonthBounds(selYear, selMonth);
-    pStart = curBounds.start;
-    pEnd = curBounds.end;
+    // Do not show data for future months of the current year
+    if (selYear > currentYear) {
+      labels = [''];
+      values = [0];
+    } else if (selYear === currentYear) {
+      labels = labels.slice(0, currentMonth);
+      values = values.slice(0, currentMonth);
+    }
+  } else {
+    const { start, end } = getMonthBounds(selYear, selMonth);
+    const dayTotals = new Map<number, number>();
+    const rows = all<{ day: number; total: number }>(
+      `SELECT CAST(SUBSTR(expense_date, 9, 2) AS INTEGER) AS day, SUM(amount) AS total
+       FROM expenses
+       WHERE user_id = ? AND expense_date >= ? AND expense_date <= ?
+       GROUP BY day`,
+      [userId, start, end]
+    );
+    for (const r of rows) {
+      dayTotals.set(r.day, r.total);
+    }
+
+    const numDays = new Date(selYear, selMonth, 0).getDate();
+    let limitDays = numDays;
+
+    // Do not show data for future months or future days of the current month
+    if (selYear > currentYear || (selYear === currentYear && selMonth > currentMonth)) {
+      limitDays = 0;
+    } else if (selYear === currentYear && selMonth === currentMonth) {
+      limitDays = Math.min(numDays, t.getDate());
+    }
+
+    if (limitDays === 0) {
+      labels = [''];
+      values = [0];
+    } else {
+      labels = Array.from({ length: limitDays }, (_, i) => {
+        const day = i + 1;
+        return (day === 1 || day % 5 === 0 || day === limitDays) ? String(day) : '';
+      });
+      values = Array.from({ length: limitDays }, (_, i) => {
+        const day = i + 1;
+        return dayTotals.get(day) || 0;
+      });
+    }
+
+    pStart = start;
+    pEnd = end;
 
     const pm = selMonth === 1 ? 12 : selMonth - 1;
     const py = selMonth === 1 ? selYear - 1 : selYear;
@@ -573,9 +602,10 @@ export const expenseAnalytics = (
     prevStart = prevBounds.start;
     prevEnd = prevBounds.end;
 
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     periodLabel = `${monthNames[selMonth - 1]} ${selYear}`;
     prevLabel = `${monthNames[pm - 1]} ${py}`;
-    days = new Date(selYear, selMonth, 0).getDate();
+    days = numDays;
   }
 
   const curData = _categoryRows(userId, pStart, pEnd);
@@ -762,4 +792,65 @@ export const passwordHealth = (userId: string) => {
   const avg = creds.length ? Math.round(creds.reduce((s, c) => s + c.password_strength, 0) / creds.length) : 0;
   return { total: creds.length, weak, strong, score: avg };
 };
+
+export interface UpcomingSip {
+  id: string;
+  asset_id: string;
+  frequency: string;
+  asset_name: string;
+  next_due_date: string | null;
+  amount: number;
+}
+
+export const upcomingSips = (userId: string): UpcomingSip[] => {
+  const rows = all<UpcomingSip>(
+    `SELECT s.id, s.asset_id, s.frequency, a.name AS asset_name, s.next_due_date, s.amount
+     FROM sip_schedules s
+     JOIN assets a ON s.asset_id = a.id
+     WHERE s.user_id = ? AND s.status = 'active'
+     ORDER BY s.next_due_date ASC
+     LIMIT 5`,
+    [userId]
+  );
+  return rows;
+};
+
+export interface SpendingInsightsResult {
+  month_total: number;
+  prev_total: number;
+  categories: any[];
+  suggestion: string | null;
+}
+
+export const spendingInsights = (userId: string): SpendingInsightsResult => {
+  const t = today();
+  const cy = t.getFullYear();
+  const cm = t.getMonth() + 1;
+
+  // Previous month bounds
+  const pm = cm === 1 ? 12 : cm - 1;
+  const py = cm === 1 ? cy - 1 : cy;
+
+  const cur = categoryBreakdown(userId, cy, cm);
+  const prev = categoryBreakdown(userId, py, pm);
+
+  // Suggestion: biggest discretionary category
+  let suggestion: string | null = null;
+  const discretionary = cur.categories.filter((c) =>
+    ['Food & Dining', 'Entertainment', 'Shopping'].includes(c.name)
+  );
+  if (discretionary.length > 0) {
+    const top = discretionary.reduce((max, c) => (c.amount > max.amount ? c : max), discretionary[0]);
+    const save = Math.round(top.amount * 0.15);
+    suggestion = `Reducing ${top.name} by ~15% could save ₹${Math.round(save / 100).toLocaleString('en-IN')}/month toward your goals.`;
+  }
+
+  return {
+    month_total: cur.total,
+    prev_total: prev.total,
+    categories: cur.categories.slice(0, 3), // Show top 3 categories on dashboard
+    suggestion,
+  };
+};
+
 

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Animated, Easing, Pressable, ScrollView, View } from 'react-native';
 import {
   Button,
   Checkbox,
@@ -17,6 +17,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useApp } from '../../context/AppContext';
 import { useDataSafe } from '../../hooks/useData';
@@ -60,6 +61,169 @@ const SORT_LABELS = {
   name: 'Name',
 };
 
+const formatTargetDateLocal = (dateStr: string | null): string => {
+  if (!dateStr) return 'No target date';
+  try {
+    const date = new Date(dateStr + 'T00:00:00');
+    const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+    const formatted = date.toLocaleDateString('en-IN', options);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffTime = date.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      return `Overdue (${formatted})`;
+    } else if (diffDays === 0) {
+      return `Due today (${formatted})`;
+    } else if (diffDays === 1) {
+      return `Due tomorrow (${formatted})`;
+    } else if (diffDays <= 30) {
+      return `Due in ${diffDays} days (${formatted})`;
+    } else {
+      const diffMonths = Math.round(diffDays / 30.44);
+      return `Due in ${diffMonths} month${diffMonths > 1 ? 's' : ''} (${formatted})`;
+    }
+  } catch (_) {
+    return dateStr;
+  }
+};
+
+const AnimatedPressable: React.FC<{
+  onPress?: () => void;
+  style?: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}> = ({ onPress, style, children, disabled }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    Animated.timing(scale, {
+      toValue: 0.96,
+      duration: 100,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    if (disabled) return;
+    Animated.timing(scale, {
+      toValue: 1,
+      duration: 140,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPress={disabled ? undefined : onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled}
+    >
+      <Animated.View style={[{ transform: [{ scale }] }, style]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+const StaggeredAssetRow: React.FC<{
+  asset: any;
+  isLinked: boolean;
+  onLink: () => void;
+  allocPct: string;
+  onAllocChange: (v: string) => void;
+  index: number;
+  theme: any;
+  formatINR: (v: number) => string;
+}> = ({ asset, isLinked, onLink, allocPct, onAllocChange, index, theme, formatINR }) => {
+  const fade = useRef(new Animated.Value(0)).current;
+  const slide = useRef(new Animated.Value(12)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fade, {
+        toValue: 1,
+        duration: 220,
+        delay: index * 40,
+        easing: Easing.bezier(0.23, 1, 0.32, 1),
+        useNativeDriver: true,
+      }),
+      Animated.timing(slide, {
+        toValue: 0,
+        duration: 220,
+        delay: index * 40,
+        easing: Easing.bezier(0.23, 1, 0.32, 1),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        opacity: fade,
+        transform: [{ translateY: slide }],
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: isLinked ? theme.colors.primary : theme.colors.outlineVariant,
+        borderRadius: theme.roundness || 8,
+        padding: 12,
+        backgroundColor: isLinked ? theme.colors.primaryContainer + '11' : theme.colors.surface,
+      }}
+    >
+      <Pressable
+        onPress={onLink}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+      >
+        <Checkbox
+          status={isLinked ? 'checked' : 'unchecked'}
+          onPress={onLink}
+        />
+        <View style={{ flex: 1 }}>
+          <Text variant="titleSmall" style={{ fontWeight: '700' }}>
+            {asset.name}
+          </Text>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            {formatINR(asset.current_value)}
+          </Text>
+        </View>
+      </Pressable>
+      {isLinked && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginLeft: 44,
+            marginTop: 8,
+            gap: 8,
+          }}
+        >
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            Allocation:
+          </Text>
+          <TextInput
+            value={allocPct}
+            onChangeText={onAllocChange}
+            keyboardType="numeric"
+            mode="outlined"
+            dense
+            style={{ width: 64, height: 32 }}
+          />
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            %
+          </Text>
+        </View>
+      )}
+    </Animated.View>
+  );
+};
+
 const GoalsDashboardScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
@@ -69,9 +233,9 @@ const GoalsDashboardScreen: React.FC = () => {
   const { view, setView, filterStatus, setFilterStatus, sortBy, setSortBy, searchQuery, setSearchQuery } =
     useGoalsStore();
 
-  const { data: progressData, error: progressError } = useDataSafe(() => goalsProgress(userId));
+  const { data: progressData, error: progressError } = useDataSafe(() => goalsProgress(userId || ''));
   const { data: assetsData } = useDataSafe(() =>
-    all<Asset>('SELECT * FROM assets WHERE user_id = ? ORDER BY name', [userId]),
+    all<Asset>('SELECT * FROM assets WHERE user_id = ? ORDER BY name', [userId || '']),
   );
 
   const progress = progressData ?? {
@@ -86,10 +250,34 @@ const GoalsDashboardScreen: React.FC = () => {
 
   // Generate goal notifications on screen load
   useEffect(() => {
-    try { generateGoalNotifications(userId); } catch { /* non-critical */ }
+    try { generateGoalNotifications(userId || ''); } catch { /* non-critical */ }
   }, [userId, progressData]);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [step, setStep] = useState(1);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const translateYAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (addOpen) {
+      fadeAnim.setValue(0);
+      translateYAnim.setValue(12);
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateYAnim, {
+          toValue: 0,
+          duration: 200,
+          easing: Easing.bezier(0.23, 1, 0.32, 1),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [step, addOpen]);
   const [form, setForm] = useState({ ...blank });
   const [typeMenu, setTypeMenu] = useState(false);
   const [sortMenu, setSortMenu] = useState(false);
@@ -173,6 +361,7 @@ const GoalsDashboardScreen: React.FC = () => {
       setForm({ ...blank });
       setLinks({});
       setAllocPct({});
+      setStep(1);
       setAddOpen(false);
       refresh();
     } catch {
@@ -469,172 +658,281 @@ const GoalsDashboardScreen: React.FC = () => {
         icon="plus"
         label="Add Goal"
         style={{ position: 'absolute', right: 16, bottom: Math.max(insets.bottom, 16) + 16 }}
-        onPress={() => setAddOpen(true)}
+        onPress={() => {
+          setForm({ ...blank });
+          setLinks({});
+          setAllocPct({});
+          setStep(1);
+          setAddOpen(true);
+        }}
       />
 
       <Portal>
-        {/* Add Goal dialog */}
-        <Dialog visible={addOpen} onDismiss={() => setAddOpen(false)} style={{ maxHeight: '85%' }}>
-          <Dialog.Title>Add Goal</Dialog.Title>
-          <Dialog.ScrollArea>
+        <Dialog visible={addOpen} onDismiss={() => { setAddOpen(false); setStep(1); }} style={{ maxHeight: '85%', borderRadius: theme.roundness || 12 }}>
+          <Dialog.Title style={{ fontSize: 18, fontWeight: '700', paddingBottom: 8 }}>
+            Add Goal — Step {step} of 3 ({step === 1 ? 'Details' : step === 2 ? 'Schedule' : 'Funding'})
+          </Dialog.Title>
+          <Dialog.ScrollArea style={{ paddingHorizontal: 20, borderTopWidth: 0, borderBottomWidth: 0 }}>
             <ScrollView keyboardShouldPersistTaps="handled">
-            <View style={{ paddingVertical: 12 }}>
-              <View
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}
-              >
-                <GoalTypeIcon goalType={form.goal_type} size={28} />
-                <Text variant="titleSmall" style={{ fontWeight: '700' }}>
-                  {typeLabel}
-                </Text>
-              </View>
-              <TextInput
-                label="Goal name"
-                value={form.name}
-                onChangeText={(v) => set('name', v)}
-                mode="outlined"
-                dense
-                style={{ marginBottom: 8 }}
-              />
-              <Menu
-                visible={typeMenu}
-                onDismiss={() => setTypeMenu(false)}
-                anchor={
-                  <Pressable
-                    onPress={() => setTypeMenu(true)}
-                    style={{
-                      borderWidth: 1,
-                      borderColor: theme.colors.outline,
-                      borderRadius: 4,
-                      paddingHorizontal: 12,
-                      paddingVertical: 14,
-                      backgroundColor: theme.colors.surface,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 2 }}>Goal type</Text>
-                    <Text variant="bodyMedium">{typeLabel}</Text>
-                  </Pressable>
-                }
-              >
-                {GOAL_TYPES.map(([v, label]) => (
-                  <Menu.Item
-                    key={v}
-                    title={label}
-                    onPress={() => {
-                      set('goal_type', v);
-                      setTypeMenu(false);
-                    }}
-                  />
-                ))}
-              </Menu>
-              <TextInput
-                label="Target amount (₹)"
-                keyboardType="numeric"
-                value={form.target}
-                onChangeText={(v) => set('target', v)}
-                mode="outlined"
-                dense
-                style={{ marginBottom: 8 }}
-              />
-              <Pressable
-                onPress={() => setShowDatePicker(true)}
-                style={{
-                  borderWidth: 1,
-                  borderColor: theme.colors.outline,
-                  borderRadius: 4,
-                  paddingHorizontal: 12,
-                  paddingVertical: 14,
-                  backgroundColor: theme.colors.surface,
-                  marginBottom: 4,
-                }}
-              >
-                <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 2 }}>Target date (optional)</Text>
-                <Text variant="bodyMedium" style={{ color: form.target_date ? theme.colors.onSurface : theme.colors.onSurfaceVariant }}>
-                  {form.target_date ? form.target_date : 'Tap to set date'}
-                </Text>
-              </Pressable>
-              {form.target_date ? (
-                <Button
-                  compact
-                  textColor={palette.danger}
-                  onPress={() => set('target_date', '')}
-                  style={{ marginBottom: 8, alignSelf: 'flex-start' }}
-                >
-                  Clear date
-                </Button>
-              ) : (
-                <View style={{ marginBottom: 8 }} />
-              )}
-              {showDatePicker && (
-                <DateTimePicker
-                  value={parsedDate}
-                  mode="date"
-                  minimumDate={new Date()}
-                  onChange={(_e, date) => {
-                    setShowDatePicker(false);
-                    if (date) set('target_date', date.toISOString().slice(0, 10));
-                  }}
-                />
-              )}
-              <TextInput
-                label="Monthly contribution (₹)"
-                keyboardType="numeric"
-                value={form.monthly}
-                onChangeText={(v) => set('monthly', v)}
-                mode="outlined"
-                dense
-                style={{ marginBottom: 8 }}
-              />
-              <Text variant="labelMedium" style={{ marginTop: 4, marginBottom: 4 }}>
-                Link assets (fund this goal)
-              </Text>
-              {assets.length === 0 ? (
-                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                  No assets to link yet.
-                </Text>
-              ) : (
-                assets.map((a) => (
-                  <View key={a.id}>
-                    <Checkbox.Item
-                      label={`${a.name}  (${formatINR(a.current_value)})`}
-                      status={links[a.id] ? 'checked' : 'unchecked'}
-                      onPress={() => {
-                        setLinks((l) => ({ ...l, [a.id]: !l[a.id] }));
-                        if (!allocPct[a.id]) setAllocPct((p) => ({ ...p, [a.id]: '100' }));
-                      }}
-                      position="leading"
-                      style={{ paddingVertical: 0 }}
+              <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: translateYAnim }], paddingVertical: 12 }}>
+                {step === 1 ? (
+                  <View>
+                    <TextInput
+                      label="Goal name"
+                      value={form.name}
+                      onChangeText={(v) => set('name', v)}
+                      mode="outlined"
+                      dense
+                      style={{ marginBottom: 16 }}
                     />
-                    {links[a.id] && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 48, marginBottom: 4, gap: 8 }}>
-                        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>Allocation:</Text>
-                        <TextInput
-                          value={allocPct[a.id] ?? '100'}
-                          onChangeText={(v) => setAllocPct((p) => ({ ...p, [a.id]: v.replace(/[^0-9]/g, '') }))}
-                          keyboardType="numeric"
-                          mode="outlined"
-                          dense
-                          style={{ width: 64 }}
+                    
+                    {/* Goal Type (Selectable) Selector Card */}
+                    <Menu
+                      visible={typeMenu}
+                      onDismiss={() => setTypeMenu(false)}
+                      anchor={
+                        <AnimatedPressable
+                          onPress={() => setTypeMenu(true)}
+                          style={{
+                            borderWidth: 1,
+                            borderColor: theme.colors.outline,
+                            borderRadius: theme.roundness || 8,
+                            paddingHorizontal: 12,
+                            paddingVertical: 12,
+                            backgroundColor: theme.colors.surface,
+                            marginBottom: 16,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            width: '100%',
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <GoalTypeIcon goalType={form.goal_type} size={22} />
+                            <View style={{ flex: 1 }}>
+                              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                                Goal Type (Selectable)
+                              </Text>
+                              <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
+                                {typeLabel}
+                              </Text>
+                            </View>
+                          </View>
+                          <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.onSurfaceVariant} />
+                        </AnimatedPressable>
+                      }
+                    >
+                      {GOAL_TYPES.map(([v, label]) => (
+                        <Menu.Item
+                          key={v}
+                          title={label}
+                          onPress={() => {
+                            set('goal_type', v);
+                            setTypeMenu(false);
+                          }}
                         />
-                        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>%</Text>
-                      </View>
-                    )}
+                      ))}
+                    </Menu>
+
+                    <TextInput
+                      label="Target amount (₹)"
+                      keyboardType="numeric"
+                      value={form.target}
+                      onChangeText={(v) => set('target', v)}
+                      mode="outlined"
+                      dense
+                      style={{ marginBottom: 8 }}
+                    />
                   </View>
-                ))
-              )}
-            </View>
+                ) : step === 2 ? (
+                  <View>
+                    {/* Target Date Picker (Explicit Optional explanation) */}
+                    <AnimatedPressable
+                      onPress={() => setShowDatePicker(true)}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: theme.colors.outline,
+                        borderRadius: theme.roundness || 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 12,
+                        backgroundColor: theme.colors.surface,
+                        marginBottom: 4,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                          Target Date (Optional — Skip for no deadline)
+                        </Text>
+                        <Text
+                          variant="bodyMedium"
+                          style={{
+                            fontWeight: '700',
+                            color: form.target_date ? theme.colors.onSurface : theme.colors.onSurfaceVariant,
+                            marginTop: 2,
+                          }}
+                        >
+                          {form.target_date ? formatTargetDateLocal(form.target_date) : 'No target date (Tap to set)'}
+                        </Text>
+                      </View>
+                      <MaterialCommunityIcons name="calendar" size={20} color={theme.colors.onSurfaceVariant} />
+                    </AnimatedPressable>
+
+                    {form.target_date ? (
+                      <Button
+                        compact
+                        textColor={palette.danger}
+                        onPress={() => set('target_date', '')}
+                        style={{ marginBottom: 12, alignSelf: 'flex-start' }}
+                      >
+                        Clear date
+                      </Button>
+                    ) : (
+                      <View style={{ marginBottom: 12 }} />
+                    )}
+
+                    {showDatePicker && (
+                      <DateTimePicker
+                        value={parsedDate}
+                        mode="date"
+                        minimumDate={new Date()}
+                        onChange={(_e, date) => {
+                          setShowDatePicker(false);
+                          if (date) set('target_date', date.toISOString().slice(0, 10));
+                        }}
+                      />
+                    )}
+
+                    <TextInput
+                      label="Monthly contribution (₹)"
+                      keyboardType="numeric"
+                      value={form.monthly}
+                      onChangeText={(v) => set('monthly', v)}
+                      mode="outlined"
+                      dense
+                      style={{ marginBottom: 8 }}
+                    />
+                  </View>
+                ) : (
+                  /* Asset selection cards list */
+                  <View>
+                    <Text variant="labelMedium" style={{ marginTop: 4, marginBottom: 10, fontWeight: '700' }}>
+                      Link assets to fund this goal
+                    </Text>
+                    <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
+                      {assets.length === 0 ? (
+                        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                          No assets to link yet.
+                        </Text>
+                      ) : (
+                        assets.map((a, i) => (
+                          <StaggeredAssetRow
+                            key={a.id}
+                            asset={a}
+                            isLinked={!!links[a.id]}
+                            onLink={() => {
+                              setLinks((l) => ({ ...l, [a.id]: !l[a.id] }));
+                              if (!allocPct[a.id]) setAllocPct((p) => ({ ...p, [a.id]: '100' }));
+                            }}
+                            allocPct={allocPct[a.id] ?? '100'}
+                            onAllocChange={(v) =>
+                              setAllocPct((p) => ({ ...p, [a.id]: v.replace(/[^0-9]/g, '') }))
+                            }
+                            index={i}
+                            theme={theme}
+                            formatINR={formatINR}
+                          />
+                        ))
+                      )}
+                    </ScrollView>
+                  </View>
+                )}
+              </Animated.View>
             </ScrollView>
           </Dialog.ScrollArea>
-          <Dialog.Actions>
-            <Button onPress={() => setAddOpen(false)}>Cancel</Button>
-            <Button mode="contained" onPress={saveGoal}>
-              Create Goal
-            </Button>
-          </Dialog.Actions>
+          
+          {/* Fitts' Law Button Grouping */}
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, paddingHorizontal: 24, paddingBottom: 16 }}>
+            {step === 1 ? (
+              <>
+                <AnimatedPressable
+                  onPress={() => { setAddOpen(false); setStep(1); }}
+                  style={{ paddingVertical: 10, paddingHorizontal: 16 }}
+                >
+                  <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600' }}>Cancel</Text>
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={() => setStep(2)}
+                  style={{
+                    backgroundColor: theme.colors.primary,
+                    borderRadius: theme.roundness || 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                  }}
+                >
+                  <Text variant="labelLarge" style={{ color: theme.colors.onPrimary, fontWeight: '700' }}>Next</Text>
+                </AnimatedPressable>
+              </>
+            ) : step === 2 ? (
+              <>
+                <AnimatedPressable
+                  onPress={() => setStep(1)}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.colors.outline,
+                    borderRadius: theme.roundness || 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                  }}
+                >
+                  <Text variant="labelLarge" style={{ color: theme.colors.primary, fontWeight: '700' }}>Back</Text>
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={() => setStep(3)}
+                  style={{
+                    backgroundColor: theme.colors.primary,
+                    borderRadius: theme.roundness || 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                  }}
+                >
+                  <Text variant="labelLarge" style={{ color: theme.colors.onPrimary, fontWeight: '700' }}>Next</Text>
+                </AnimatedPressable>
+              </>
+            ) : (
+              <>
+                <AnimatedPressable
+                  onPress={() => setStep(2)}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.colors.outline,
+                    borderRadius: theme.roundness || 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                  }}
+                >
+                  <Text variant="labelLarge" style={{ color: theme.colors.primary, fontWeight: '700' }}>Back</Text>
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={saveGoal}
+                  style={{
+                    backgroundColor: theme.colors.primary,
+                    borderRadius: theme.roundness || 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                  }}
+                >
+                  <Text variant="labelLarge" style={{ color: theme.colors.onPrimary, fontWeight: '700' }}>Create Goal</Text>
+                </AnimatedPressable>
+              </>
+            )}
+          </View>
         </Dialog>
 
         {/* Delete confirmation */}
-        <Dialog visible={!!confirmId} onDismiss={() => setConfirmId(null)}>
+        <Dialog visible={!!confirmId} onDismiss={() => setConfirmId(null)} style={{ borderRadius: theme.roundness }}>
           <Dialog.Title>Delete Goal</Dialog.Title>
           <Dialog.Content>
             <Text>Delete this goal? This action cannot be undone.</Text>

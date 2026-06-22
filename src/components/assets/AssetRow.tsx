@@ -1,6 +1,6 @@
-import React from 'react';
-import { View } from 'react-native';
-import { IconButton, Text, TouchableRipple, useTheme } from 'react-native-paper';
+import React, { useState } from 'react';
+import { View, LayoutAnimation } from 'react-native';
+import { IconButton, Text, useTheme, Button, Checkbox } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import type { Asset } from '../../models/types';
@@ -17,75 +17,238 @@ interface AssetRowProps {
   onDelete: (id: string) => void;
   onPress?: (id: string) => void;
   onSip?: (id: string) => void;
+  selectMode?: boolean;
+  selected?: boolean;
+  onSelectToggle?: (id: string) => void;
 }
 
-const AssetRow: React.FC<AssetRowProps> = React.memo(({ asset: a, onEdit, onDelete, onPress, onSip }) => {
+const getShortName = (name: string): string => {
+  const map: Record<string, string> = {
+    'Mutual Funds': 'MF',
+    'Equity': 'Stocks',
+    'Fixed Deposit': 'FD',
+    'Gold': 'Gold',
+    'Public Provident Fund': 'PPF',
+    'Employee Provident Fund': 'EPF',
+    'Real Estate': 'Property',
+    'Insurance': 'Insurance',
+    'Bank Balance': 'Cash',
+  };
+  return map[name] ?? name;
+};
+
+const AssetRow: React.FC<AssetRowProps> = React.memo(({
+  asset: a,
+  onEdit,
+  onDelete,
+  onPress,
+  onSip,
+  selectMode = false,
+  selected = false,
+  onSelectToggle,
+}) => {
   const theme = useTheme();
+  const [expanded, setExpanded] = useState(false);
+
   const pnl = assetPnl(a.current_value, a.invested_amount);
+  const pnlPercent = pct(pnl, a.invested_amount);
   const cagr = calcCAGR(a.current_value, a.invested_amount, a.investment_date ?? a.purchase_date);
   const cfg = getTypeConfig(a.slug ?? '');
 
+  const handleCardPress = () => {
+    if (selectMode) {
+      onSelectToggle?.(a.id);
+    } else {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setExpanded((prev) => !prev);
+    }
+  };
+
+  // Performance status badge
+  const getPerfBadge = () => {
+    if (cagr >= 20) {
+      return { label: 'High Growth', color: palette.good, icon: 'star' as const };
+    } else if (cagr >= 12) {
+      return { label: 'Top Performer', color: palette.good, icon: 'trending-up' as const };
+    } else if (cagr > 0 && cagr < 5) {
+      return { label: 'Underperforming', color: palette.danger, icon: 'trending-down' as const };
+    }
+    return null;
+  };
+
+  const perf = getPerfBadge();
+
   return (
-    <SectionCard>
+    <SectionCard
+      onPress={handleCardPress}
+      style={{
+        marginBottom: 10,
+        borderWidth: selectMode && selected ? 2 : 1,
+        borderColor: selectMode && selected ? theme.colors.primary : theme.colors.outlineVariant,
+      }}
+    >
+      {/* Top Header Row */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <TouchableRipple
-          onPress={onPress ? () => onPress(a.id) : undefined}
-          style={{ flex: 1, borderRadius: 8, padding: 2 }}
-          borderless
-          accessibilityLabel={`View details for ${a.name}`}
-          accessibilityRole="button"
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <MaterialCommunityIcons name={cfg.icon as any} size={20} color={theme.colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text variant="titleSmall" style={{ fontWeight: '800' }} numberOfLines={1}>{a.name}</Text>
-              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>{a.type_name}</Text>
-            </View>
-          </View>
-        </TouchableRipple>
-        <View style={{ flexDirection: 'row' }}>
-          {SIP_ELIGIBLE_TYPES.has(a.slug) && onSip ? (
-            <IconButton
-              icon="autorenew"
-              size={18}
-              iconColor={theme.colors.primary}
-              onPress={() => onSip(a.id)}
-              accessibilityLabel="Configure SIP"
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {selectMode ? (
+            <Checkbox
+              status={selected ? 'checked' : 'unchecked'}
+              onPress={() => onSelectToggle?.(a.id)}
             />
-          ) : null}
-          <IconButton icon="pencil" size={18} onPress={() => onEdit(a.id)} accessibilityLabel="Edit asset" />
-          <IconButton icon="delete" iconColor={palette.danger} size={18} onPress={() => onDelete(a.id)} accessibilityLabel="Delete asset" />
+          ) : (
+            <View
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: theme.colors.surfaceVariant,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <MaterialCommunityIcons name={cfg.icon as any} size={16} color={theme.colors.primary} />
+            </View>
+          )}
+          
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text variant="titleSmall" style={{ fontWeight: '700', color: theme.colors.onSurface }} numberOfLines={1}>
+                {a.name}
+              </Text>
+              <View style={{
+                paddingHorizontal: 5,
+                paddingVertical: 1.5,
+                borderRadius: 4,
+                backgroundColor: theme.colors.surfaceVariant,
+              }}>
+                <Text style={{ fontSize: 9, fontWeight: '800', color: theme.colors.primary }}>
+                  {getShortName(a.type_name)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Performance indicator line */}
+            {perf && !selectMode && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 }}>
+                <MaterialCommunityIcons name={perf.icon} size={11} color={perf.color} />
+                <Text variant="labelSmall" style={{ fontSize: 9, color: perf.color, fontWeight: '600' }}>
+                  {perf.label}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
+
+        {/* Collapsed Valuation Stats */}
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text variant="titleSmall" style={{ fontWeight: '800', color: theme.colors.onSurface }}>
+            {formatINR(a.current_value)}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 1 }}>
+            <MaterialCommunityIcons
+              name={pnl >= 0 ? 'arrow-up-bold' : 'arrow-down-bold'}
+              size={12}
+              color={pnl >= 0 ? palette.good : palette.danger}
+            />
+            <Text
+              variant="labelSmall"
+              style={{
+                color: pnl >= 0 ? palette.good : palette.danger,
+                fontWeight: '700',
+                fontSize: 10,
+              }}
+            >
+              {pnl >= 0 ? '+' : ''}{pnlPercent}%
+            </Text>
+          </View>
+        </View>
+        
+        {!selectMode && (
+          <MaterialCommunityIcons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={theme.colors.onSurfaceVariant}
+            style={{ marginLeft: 8 }}
+          />
+        )}
       </View>
 
-      <Row style={{ marginTop: 6 }}>
-        <Kpi flex label="Invested" value={formatINR(a.invested_amount)} />
-        <Kpi flex label="Current" value={formatINR(a.current_value)} />
-        <Kpi
-          flex
-          label="P&L"
-          value={formatINR(pnl)}
-          subTone={pnl >= 0 ? 'good' : 'bad'}
-          sub={`${pct(pnl, a.invested_amount)}%`}
-        />
-      </Row>
+      {/* Expanded progressive disclosure details */}
+      {expanded && !selectMode && (
+        <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.colors.outlineVariant }}>
+          <Row>
+            <Kpi flex label="Invested Amount" value={formatINR(a.invested_amount)} />
+            <Kpi
+              flex
+              label="Total Return"
+              value={formatINR(pnl)}
+              subTone={pnl >= 0 ? 'good' : 'bad'}
+            />
+          </Row>
 
-      {cagr !== 0 && (
-        <View style={{ marginTop: 4, alignItems: 'flex-end' }}>
-          <Text variant="labelSmall" style={{ color: cagr >= 0 ? palette.good : palette.danger, fontVariant: ['tabular-nums'] }}>
-            CAGR {cagr >= 0 ? '+' : ''}{cagr}%
-          </Text>
+          <Row style={{ marginTop: 10 }}>
+            {cagr !== 0 ? (
+              <Kpi flex label="CAGR" value={`${cagr >= 0 ? '+' : ''}${cagr}%`} subTone={cagr >= 0 ? 'good' : 'bad'} />
+            ) : (
+              <Kpi flex label="CAGR" value="—" />
+            )}
+            {a.is_sip ? (
+              <Kpi
+                flex
+                label="Monthly SIP"
+                value={a.sip_monthly_amount ? `₹${(a.sip_monthly_amount / 100).toLocaleString('en-IN')}` : 'Active'}
+              />
+            ) : (
+              <Kpi flex label="Monthly SIP" value="Inactive" />
+            )}
+          </Row>
+
+          {/* Expanded Actions Row */}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 14, alignItems: 'center' }}>
+            <Button
+              mode="contained"
+              icon="eye"
+              onPress={() => onPress?.(a.id)}
+              style={{ flex: 2, borderRadius: theme.roundness }}
+              contentStyle={{ paddingVertical: 1 }}
+              labelStyle={{ fontSize: 12, fontWeight: '700' }}
+            >
+              View Details
+            </Button>
+            
+            {SIP_ELIGIBLE_TYPES.has(a.slug) && onSip && (
+              <Button
+                mode="outlined"
+                icon="autorenew"
+                onPress={() => onSip(a.id)}
+                style={{ flex: 1.2, borderRadius: theme.roundness }}
+                contentStyle={{ paddingVertical: 1 }}
+                labelStyle={{ fontSize: 11, fontWeight: '600' }}
+              >
+                SIP
+              </Button>
+            )}
+
+            <IconButton
+              icon="pencil"
+              mode="outlined"
+              size={18}
+              onPress={() => onEdit(a.id)}
+              style={{ margin: 0, borderRadius: theme.roundness, borderColor: theme.colors.outline }}
+              accessibilityLabel="Edit Asset"
+            />
+            <IconButton
+              icon="delete"
+              mode="outlined"
+              iconColor={palette.danger}
+              size={18}
+              onPress={() => onDelete(a.id)}
+              style={{ margin: 0, borderRadius: theme.roundness, borderColor: palette.danger }}
+              accessibilityLabel="Delete Asset"
+            />
+          </View>
         </View>
       )}
-
-      {a.is_sip ? (
-        <View style={{ marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <MaterialCommunityIcons name="autorenew" size={12} color={theme.colors.primary} />
-          <Text variant="labelSmall" style={{ color: theme.colors.primary, fontVariant: ['tabular-nums'] }}>
-            SIP {a.sip_monthly_amount ? `₹${(a.sip_monthly_amount / 100).toLocaleString('en-IN')}/mo` : 'active'}
-          </Text>
-        </View>
-      ) : null}
     </SectionCard>
   );
 });

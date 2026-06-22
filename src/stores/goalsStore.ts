@@ -6,11 +6,11 @@ type GoalFilterStatus = 'all' | 'completed' | 'on_track' | 'behind' | 'overdue';
 type GoalSortBy = 'target_date' | 'pct' | 'name';
 
 interface GoalsStore {
-  view: 'cards' | 'focus';
+  view: 'cards' | 'priority' | 'compact' | 'timeline' | 'focus';
   filterStatus: GoalFilterStatus;
   sortBy: GoalSortBy;
   searchQuery: string;
-  setView: (v: 'cards' | 'focus') => void;
+  setView: (v: 'cards' | 'priority' | 'compact' | 'timeline' | 'focus') => void;
   setFilterStatus: (s: GoalFilterStatus) => void;
   setSortBy: (s: GoalSortBy) => void;
   setSearchQuery: (q: string) => void;

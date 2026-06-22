@@ -17,13 +17,14 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { encryptPDF } from '@pdfsmaller/pdf-encrypt-lite';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 import { DistributionPie, TrendLine } from '../components/charts';
 import { Kpi, ProgressBar, Row, Screen, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
 import { all } from '../db';
 import { useData } from '../hooks/useData';
-import type { Asset, FinancialGoal, InsurancePolicy, Loan, SIPSchedule, VaultCredential } from '../models/types';
+import type { Asset, AssetImage, FinancialGoal, InsurancePolicy, Loan, SIPSchedule, VaultCredential } from '../models/types';
 import { LOAN_TYPE_LABELS, POLICY_TYPE_LABELS, titleCase } from '../services/constants';
 import {
   categoryBreakdown,
@@ -274,7 +275,7 @@ const makeTrendLineSvg = (expSeries: { labels: string[]; income: number[]; expen
 };
 
 /** Compiles HTML file containing report tables and charts. */
-const buildHtmlReport = (
+const buildHtmlReport = async (
   userId: string,
   nw: any,
   pf: any,
@@ -284,7 +285,7 @@ const buildHtmlReport = (
   includeVault: boolean,
   addWatermark: boolean,
   watermarkText: string,
-): string => {
+): Promise<string> => {
   const allocationSvg = selected.assets && pf.allocation && pf.allocation.length > 0
     ? makeAssetPieSvg(pf.allocation)
     : '';
@@ -297,8 +298,137 @@ const buildHtmlReport = (
   if (selected.assets) {
     const assets = all<Asset & { tn: string }>(
       `SELECT a.*, t.name tn FROM assets a JOIN asset_types t ON t.id=a.asset_type_id WHERE a.user_id=?`,
-      [userId]
+      [userId!]
     );
+
+    // Fetch all attachments for these assets
+    const allAttachments = all<AssetImage>(
+      `SELECT * FROM asset_images WHERE user_id=? ORDER BY created_at DESC`,
+      [userId!]
+    );
+
+    // Read base64 content for each attachment asynchronously
+    const attachmentsWithBase64 = await Promise.all(
+      allAttachments.map(async (img) => {
+        try {
+          const exists = await FileSystem.getInfoAsync(img.uri);
+          if (!exists.exists) return { ...img, base64: null, tooLarge: false, size: 0 };
+          const isPdf = img.label?.startsWith('pdf:');
+
+          if (isPdf) {
+            // Check file size for PDF to avoid OutOfMemoryError
+            const sizeLimit = 1.5 * 1024 * 1024; // 1.5 MB
+            if (exists.size && exists.size > sizeLimit) {
+              return { ...img, base64: null, tooLarge: true, size: exists.size };
+            }
+            const base64 = await FileSystem.readAsStringAsync(img.uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            return { ...img, base64, tooLarge: false, size: exists.size };
+          } else {
+            // It's an image. Resize and compress using expo-image-manipulator to prevent WebView OOM
+            const manipResult = await manipulateAsync(
+              img.uri,
+              [{ resize: { width: 800 } }],
+              { compress: 0.6, format: SaveFormat.JPEG, base64: true }
+            );
+            return { ...img, base64: manipResult.base64 || null, tooLarge: false, size: exists.size };
+          }
+        } catch (err) {
+          console.warn(`Failed to read file for PDF export: ${img.uri}`, err);
+          return { ...img, base64: null, tooLarge: false, size: 0 };
+        }
+      })
+    );
+
+    // Build attachments preview HTML
+    let attachmentsPreviewHtml = '';
+    const assetsWithAttachments = assets.filter(a =>
+      attachmentsWithBase64.some(img => img.asset_id === a.id)
+    );
+
+    if (assetsWithAttachments.length > 0) {
+      const attachmentsHtmlList = await Promise.all(assetsWithAttachments.map(async (a) => {
+        const assetImgs = attachmentsWithBase64.filter(img => img.asset_id === a.id);
+        const imagesHtmlList = assetImgs.map(img => {
+          const isPdf = img.label?.startsWith('pdf:');
+          const filename = img.label?.replace('pdf:', '') ?? (isPdf ? 'document.pdf' : 'image.jpg');
+          const mimeType = isPdf ? 'application/pdf' : 'image/jpeg';
+
+          let previewContent = '';
+          if (img.base64) {
+            if (isPdf) {
+              previewContent = `
+                <div style="text-align: center; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; background-color: #fff; height: 500px;">
+                  <object data="data:application/pdf;base64,${img.base64}" type="application/pdf" style="width: 100%; height: 100%;">
+                    <embed src="data:application/pdf;base64,${img.base64}" type="application/pdf" style="width: 100%; height: 100%;" />
+                  </object>
+                </div>
+              `;
+            } else {
+              previewContent = `
+                <div style="text-align: center; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px; background-color: #fff;">
+                  <img src="data:image/jpeg;base64,${img.base64}" style="max-width: 100%; max-height: 450px; object-fit: contain; border-radius: 4px;" />
+                </div>
+              `;
+            }
+          } else if ((img as any).tooLarge) {
+            const sizeMb = (((img as any).size || 0) / (1024 * 1024)).toFixed(2);
+            previewContent = `
+              <div style="padding: 16px; border: 1px dashed #eab308; border-radius: 6px; color: #854d0e; background-color: #fef9c3; font-size: 11px; text-align: center; page-break-inside: avoid;">
+                <strong>Preview Omitted:</strong> This document file is too large to embed directly (${sizeMb} MB). 
+                To maintain a stable export and prevent memory issues, please view this file directly within the application.
+              </div>
+            `;
+          } else {
+            previewContent = `
+              <div style="padding: 12px; border: 1px dashed #ef4444; border-radius: 6px; color: #ef4444; background-color: #fef2f2; font-size: 11px; text-align: center;">
+                Preview unavailable (Original file not found or inaccessible).
+              </div>
+            `;
+          }
+
+          return `
+            <div style="border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 12px; page-break-inside: avoid;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-weight: 600; color: #374151; font-size: 12px;">${filename}</span>
+                <span style="font-size: 10px; color: #9ca3af; font-family: monospace;">${mimeType}</span>
+              </div>
+              ${img.local_path ? `
+                <div style="font-size: 10px; color: #6b7280; font-family: monospace; margin-bottom: 8px; word-break: break-all;">
+                  Path: ${img.local_path}
+                </div>
+              ` : ''}
+              ${previewContent}
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background-color: #f9fafb; margin-top: 15px; page-break-inside: avoid;">
+            <div style="font-weight: 700; color: #111827; font-size: 14px; margin-bottom: 4px;">
+              ${a.name} <span style="font-weight: normal; color: #6b7280; font-size: 11px;">(${a.tn})</span>
+            </div>
+            <div style="font-size: 11px; color: #4b5563; margin-bottom: 12px;">
+              Value: ${formatINR(a.current_value)} &bull; Invested: ${formatINR(a.invested_amount)}
+            </div>
+            <div style="display: flex; flex-direction: column;">
+              ${imagesHtmlList}
+            </div>
+          </div>
+        `;
+      }));
+
+      attachmentsPreviewHtml = `
+        <div style="page-break-before: always; margin-top: 30px;">
+          <div class="section-title" style="color: #0f766e; border-bottom: 2px solid #ccfbf1; margin-bottom: 15px;">Asset Documents & Image Previews</div>
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            ${attachmentsHtmlList.join('')}
+          </div>
+        </div>
+      `;
+    }
+
     assetsHtml = `
       <div class="section">
         <div class="section-title">Assets & Portfolio Summary</div>
@@ -341,6 +471,7 @@ const buildHtmlReport = (
             }).join('')}
           </tbody>
         </table>
+        ${attachmentsPreviewHtml}
       </div>
     `;
   }
@@ -461,7 +592,7 @@ const buildHtmlReport = (
 
   let loansHtml = '';
   if (selected.loans) {
-    const loans = all<Loan>('SELECT * FROM loans WHERE user_id=?', [userId]);
+    const loans = all<Loan>('SELECT * FROM loans WHERE user_id=?', [userId!]);
     loansHtml = `
       <div class="section">
         <div class="section-title">Loans & Liabilities</div>
@@ -501,7 +632,7 @@ const buildHtmlReport = (
 
   let protectHtml = '';
   if (selected.protect) {
-    const policies = all<InsurancePolicy>('SELECT * FROM insurance_policies WHERE user_id=?', [userId]);
+    const policies = all<InsurancePolicy>('SELECT * FROM insurance_policies WHERE user_id=?', [userId!]);
     protectHtml = `
       <div class="section">
         <div class="section-title">Insurance & Protection Policies</div>
@@ -589,7 +720,7 @@ const buildHtmlReport = (
     const sips = all<SIPSchedule & { asset_name: string }>(
       `SELECT s.*, a.name AS asset_name FROM sip_schedules s
        JOIN assets a ON a.id = s.asset_id WHERE s.user_id = ?`,
-      [userId]
+      [userId!]
     );
     sipHtml = `
       <div class="section">
@@ -622,7 +753,7 @@ const buildHtmlReport = (
 
   let vaultHtml = '';
   if (includeVault) {
-    const creds = all<VaultCredential>('SELECT * FROM vault_credentials WHERE user_id = ? ORDER BY service', [userId]);
+    const creds = all<VaultCredential>('SELECT * FROM vault_credentials WHERE user_id = ? ORDER BY service', [userId!]);
     vaultHtml = `
       <div class="section" style="page-break-before: always;">
         <div class="section-title" style="color: #991b1b; border-bottom: 2px solid #fee2e2;">Decrypted Vault Credentials</div>
@@ -877,14 +1008,14 @@ const ReportsScreen: React.FC = () => {
   const theme = useTheme();
   
   // Data Queries
-  const nw = useData(() => netWorth(userId));
-  const pf = useData(() => portfolioSummary(userId));
-  const expMonth = useData(() => categoryBreakdown(userId, new Date().getFullYear(), new Date().getMonth() + 1));
-  const expSeries = useData(() => incomeExpenseSeries(userId, 6));
-  const health = useData(() => financialHealth(userId));
-  const pwdHealth = useData(() => passwordHealth(userId));
-  const benchmark = useData(() => benchmarkComparison(userId));
-  const goals = useData(() => goalsProgress(userId));
+  const nw = useData(() => netWorth(userId!));
+  const pf = useData(() => portfolioSummary(userId!));
+  const expMonth = useData(() => categoryBreakdown(userId!, new Date().getFullYear(), new Date().getMonth() + 1));
+  const expSeries = useData(() => incomeExpenseSeries(userId!, 6));
+  const health = useData(() => financialHealth(userId!));
+  const pwdHealth = useData(() => passwordHealth(userId!));
+  const benchmark = useData(() => benchmarkComparison(userId!));
+  const goals = useData(() => goalsProgress(userId!));
 
   const [selected, setSelected] = useState<Record<string, boolean>>({
     assets: true,
@@ -947,7 +1078,7 @@ const ReportsScreen: React.FC = () => {
       lines.push(`Total value ${formatINR(pf.total_value)} · P&L ${pf.pnl_pct}%`);
       all<Asset & { tn: string }>(
         `SELECT a.*, t.name tn FROM assets a JOIN asset_types t ON t.id=a.asset_type_id WHERE a.user_id=?`,
-        [userId],
+        [userId!],
       ).forEach((a) => lines.push(`  • ${a.name} (${a.tn}): ${formatINR(a.current_value)}`));
       lines.push('');
     }
@@ -956,7 +1087,7 @@ const ReportsScreen: React.FC = () => {
       all<SIPSchedule & { asset_name: string }>(
         `SELECT s.*, a.name AS asset_name FROM sip_schedules s
          JOIN assets a ON a.id = s.asset_id WHERE s.user_id = ?`,
-        [userId],
+        [userId!],
       ).forEach((s) =>
         lines.push(`  • ${s.asset_name}: ${formatINR(s.amount)} (${titleCase(s.frequency)}) - Next due: ${s.next_due_date || 'N/A'}`),
       );
@@ -964,14 +1095,14 @@ const ReportsScreen: React.FC = () => {
     }
     if (selected.loans) {
       lines.push('— Loans & Liabilities —');
-      all<Loan>('SELECT * FROM loans WHERE user_id=?', [userId]).forEach((l) =>
+      all<Loan>('SELECT * FROM loans WHERE user_id=?', [userId!]).forEach((l) =>
         lines.push(`  • ${l.provider || LOAN_TYPE_LABELS[l.loan_type]}: ${formatINR(l.outstanding_amount)} outstanding (${titleCase(loanStatus(l))})`),
       );
       lines.push('');
     }
     if (selected.protect) {
       lines.push('— Insurance / Protect —');
-      all<InsurancePolicy>('SELECT * FROM insurance_policies WHERE user_id=?', [userId]).forEach((p) =>
+      all<InsurancePolicy>('SELECT * FROM insurance_policies WHERE user_id=?', [userId!]).forEach((p) =>
         lines.push(`  • ${p.policy_name} (${POLICY_TYPE_LABELS[p.policy_type]}): ${formatINR(p.coverage_amount)} cover (${titleCase(policyStatus(p))})`),
       );
       lines.push('');
@@ -1011,7 +1142,7 @@ const ReportsScreen: React.FC = () => {
     setIsGenerating(true);
     try {
       // 1. Compile the detailed HTML layout with vector SVG graphics
-      const htmlContent = buildHtmlReport(userId, nw, pf, expMonth, expSeries, selected, includeVault, addWatermark, watermarkText);
+      const htmlContent = await buildHtmlReport(userId!, nw, pf, expMonth, expSeries, selected, includeVault, addWatermark, watermarkText);
 
       // 2. Generate PDF file using expo-print
       const { uri } = await Print.printToFileAsync({ html: htmlContent });
@@ -1073,96 +1204,108 @@ const ReportsScreen: React.FC = () => {
 
 
         {/* 1. Financial Health Card */}
-        <SectionCard title="Financial Health">
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+        <SectionCard title="Financial Health" style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
             <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: theme.colors.primaryContainer, justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
-              <Text variant="headlineSmall" style={{ fontWeight: '800', color: theme.colors.onPrimaryContainer }}>{health.score}</Text>
+              <Text variant="headlineSmall" style={{ fontWeight: '700', color: theme.colors.onPrimaryContainer }}>{health.score}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>{health.rating} Rating</Text>
-              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+              <Text variant="titleMedium" style={{ fontWeight: '700' }}>{health.rating} Rating</Text>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
                 Savings rate: {health.savings_rate}% · Income vs. Expenses
               </Text>
             </View>
           </View>
-          <Divider style={{ marginVertical: 8 }} />
-          {health.insights.map((insight, idx) => (
-            <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginVertical: 4 }}>
-              <MaterialCommunityIcons name="information-outline" size={16} color={theme.colors.primary} style={{ marginTop: 2, marginRight: 8 }} />
-              <Text variant="bodyMedium" style={{ flex: 1, color: theme.colors.onSurfaceVariant }}>{insight}</Text>
-            </View>
-          ))}
+          <Divider style={{ marginVertical: 12 }} />
+          <View style={{ gap: 8 }}>
+            {health.insights.map((insight, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                <MaterialCommunityIcons name="information-outline" size={16} color={theme.colors.primary} style={{ marginTop: 2, marginRight: 8 }} />
+                <Text variant="bodyMedium" style={{ flex: 1, color: theme.colors.onSurfaceVariant, lineHeight: 18 }}>{insight}</Text>
+              </View>
+            ))}
+          </View>
         </SectionCard>
 
         {/* 2. Asset Allocation & Benchmark Card */}
-        <SectionCard title={`Benchmark Audit (${benchmark.risk_profile} profile)`}>
+        <SectionCard title={`Benchmark Audit (${benchmark.risk_profile} profile)`} style={{ marginBottom: 12 }}>
           {pf.allocation.length > 0 ? (
-            <View style={{ marginBottom: 12 }}>
-              <DistributionPie data={pf.allocation.map((a, i) => ({ name: a.type, value: a.value / 100, color: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'][i % 7] }))} />
+            <View style={{ marginBottom: 16 }}>
+              <DistributionPie
+                data={pf.allocation.map((a, i) => ({
+                  name: a.type,
+                  value: a.value / 100,
+                  color: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'][i % 7],
+                }))}
+              />
             </View>
           ) : (
-            <Text style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>No assets logged yet.</Text>
+            <Text style={{ color: theme.colors.onSurfaceVariant, marginBottom: 16 }}>No assets logged yet.</Text>
           )}
-          <Divider style={{ marginVertical: 8 }} />
-          <Text variant="titleSmall" style={{ fontWeight: '800', marginBottom: 6 }}>Portfolio Drift: {benchmark.drift}%</Text>
-          {benchmark.rows.map((row, idx) => {
-            const diff = Number((row.actual - row.recommended).toFixed(1));
-            const isOff = Math.abs(diff) > 10;
-            return (
-              <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-                <Text style={{ flex: 2, color: theme.colors.onSurfaceVariant }}>{row.type}</Text>
-                <Text style={{ flex: 1, textAlign: 'right', fontWeight: '600' }}>{row.actual}%</Text>
-                <Text style={{ flex: 1.2, textAlign: 'right', color: theme.colors.onSurfaceVariant }}>Rec: {row.recommended}%</Text>
-                <Text style={{ flex: 1, textAlign: 'right', fontWeight: 'bold', color: isOff ? palette.danger : theme.colors.onSurfaceVariant }}>
-                  {diff > 0 ? `+${diff}%` : `${diff}%`}
-                </Text>
-              </View>
-            );
-          })}
+          <Divider style={{ marginVertical: 12 }} />
+          <Text variant="titleSmall" style={{ fontWeight: '700', marginBottom: 12 }}>Portfolio Drift: {benchmark.drift}%</Text>
+          <View style={{ gap: 4 }}>
+            {benchmark.rows.map((row, idx) => {
+              const diff = Number((row.actual - row.recommended).toFixed(1));
+              const isOff = Math.abs(diff) > 10;
+              return (
+                <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
+                  <Text style={{ flex: 2, color: theme.colors.onSurfaceVariant }}>{row.type}</Text>
+                  <Text style={{ flex: 1, textAlign: 'right', fontWeight: '600' }}>{row.actual}%</Text>
+                  <Text style={{ flex: 1.2, textAlign: 'right', color: theme.colors.onSurfaceVariant }}>Rec: {row.recommended}%</Text>
+                  <Text style={{ flex: 1, textAlign: 'right', fontWeight: '700', color: isOff ? palette.danger : theme.colors.onSurfaceVariant }}>
+                    {diff > 0 ? `+${diff}%` : `${diff}%`}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
         </SectionCard>
 
         {/* 3. Password Health Card */}
-        <SectionCard title="Password Health">
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>Vault Score</Text>
-            <Text variant="titleLarge" style={{ fontWeight: '800', color: theme.colors.primary }}>{pwdHealth.score}%</Text>
+        <SectionCard title="Password Health" style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text variant="titleMedium" style={{ fontWeight: '700' }}>Vault Score</Text>
+            <Text variant="titleLarge" style={{ fontWeight: '700', color: theme.colors.primary }}>{pwdHealth.score}%</Text>
           </View>
-          <View style={{ marginBottom: 12 }}>
+          <View style={{ marginBottom: 16 }}>
             <ProgressBar pct={pwdHealth.score} color={pwdHealth.score >= 70 ? palette.good : pwdHealth.score >= 40 ? palette.warn : palette.danger} height={8} />
           </View>
           
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>Total Saved</Text>
-            <Text style={{ fontWeight: 'bold' }}>{pwdHealth.total}</Text>
+            <Text style={{ fontWeight: '700' }}>{pwdHealth.total}</Text>
           </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>Strong Passwords</Text>
-            <Text style={{ fontWeight: 'bold', color: palette.good }}>{pwdHealth.strong}</Text>
+            <Text style={{ fontWeight: '700', color: palette.good }}>{pwdHealth.strong}</Text>
           </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>Weak Passwords</Text>
-            <Text style={{ fontWeight: 'bold', color: palette.danger }}>{pwdHealth.weak}</Text>
+            <Text style={{ fontWeight: '700', color: palette.danger }}>{pwdHealth.weak}</Text>
           </View>
         </SectionCard>
 
         {/* 4. Goals Progress Card */}
-        <SectionCard title="Goal Progress">
+        <SectionCard title="Goal Progress" style={{ marginBottom: 12 }}>
           {goals.goals.length === 0 ? (
             <Text style={{ color: theme.colors.onSurfaceVariant }}>No financial goals created yet.</Text>
           ) : (
-            goals.goals.slice(0, 4).map((g) => (
-              <View key={g.id} style={{ marginBottom: 10 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <Text style={{ fontWeight: '600' }}>{g.name}</Text>
-                  <Text style={{ fontWeight: '700', color: g.pct >= 70 ? palette.good : g.pct >= 40 ? palette.warn : palette.danger }}>{g.pct}%</Text>
+            <View style={{ gap: 14 }}>
+              {goals.goals.slice(0, 4).map((g) => (
+                <View key={g.id}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <Text style={{ fontWeight: '600' }}>{g.name}</Text>
+                    <Text style={{ fontWeight: '700', color: g.pct >= 70 ? palette.good : g.pct >= 40 ? palette.warn : palette.danger }}>{g.pct}%</Text>
+                  </View>
+                  <ProgressBar pct={g.pct} color={g.pct >= 70 ? palette.good : g.pct >= 40 ? palette.warn : palette.danger} />
                 </View>
-                <ProgressBar pct={g.pct} color={g.pct >= 70 ? palette.good : g.pct >= 40 ? palette.warn : palette.danger} />
-              </View>
-            ))
+              ))}
+            </View>
           )}
         </SectionCard>
 
-        <SectionCard title="Income vs Expense (6 mo)">
+        <SectionCard title="Income vs Expense (6 mo)" style={{ marginBottom: 12 }}>
           {expSeries.labels.length > 0 ? (
             <TrendLine
               labels={expSeries.labels}
@@ -1175,8 +1318,8 @@ const ReportsScreen: React.FC = () => {
           ) : null}
         </SectionCard>
 
-        <SectionCard title="Export Report" right={<Button compact onPress={toggleAll}>{allOn ? 'Clear all' : 'Select all'}</Button>}>
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 4 }}>
+        <SectionCard title="Export Report" right={<Button mode="text" compact onPress={toggleAll} style={{ margin: 0 }}>{allOn ? 'Clear all' : 'Select all'}</Button>} style={{ marginBottom: 12 }}>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 10 }}>
             Choose the modules to include in the export.
           </Text>
           {MODULES.map((m) => (
@@ -1189,12 +1332,12 @@ const ReportsScreen: React.FC = () => {
               style={{ paddingVertical: 0 }}
             />
           ))}
-          <Divider style={{ marginVertical: 8 }} />
-          <View style={{ gap: 8 }}>
-            <Button mode="contained" icon="share-variant" onPress={onExportText}>
+          <Divider style={{ marginVertical: 12 }} />
+          <View style={{ gap: 10 }}>
+            <Button mode="contained" icon="share-variant" onPress={onExportText} style={{ borderRadius: theme.roundness }}>
               Share Plain Text Report
             </Button>
-            <Button mode="contained-tonal" icon="file-lock" onPress={() => setPdfDialogOpen(true)}>
+            <Button mode="contained-tonal" icon="file-lock" onPress={() => setPdfDialogOpen(true)} style={{ borderRadius: theme.roundness }}>
               Export Secure PDF
             </Button>
           </View>
@@ -1202,7 +1345,7 @@ const ReportsScreen: React.FC = () => {
       </Screen>
 
       <Portal>
-        <Dialog visible={pdfDialogOpen} onDismiss={() => !isGenerating && setPdfDialogOpen(false)}>
+        <Dialog visible={pdfDialogOpen} onDismiss={() => !isGenerating && setPdfDialogOpen(false)} style={{ borderRadius: theme.roundness }}>
           <Dialog.Title>Export Secure PDF</Dialog.Title>
           <Dialog.Content>
             {isGenerating ? (

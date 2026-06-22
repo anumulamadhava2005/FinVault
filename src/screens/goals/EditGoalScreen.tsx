@@ -140,7 +140,7 @@ const EditGoalScreen: React.FC = () => {
     <>
       <Stack.Screen options={{ title: 'Edit Goal' }} />
       <Screen>
-        <SectionCard>
+        <SectionCard style={{ marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <GoalTypeIcon goalType={form.goal_type} size={28} />
             <Text variant="titleMedium" style={{ fontWeight: '700' }}>{typeLabel}</Text>
@@ -156,7 +156,7 @@ const EditGoalScreen: React.FC = () => {
           <View style={{
             borderWidth: 1,
             borderColor: theme.colors.outline,
-            borderRadius: 4,
+            borderRadius: theme.roundness,
             paddingHorizontal: 12,
             paddingVertical: 12,
             backgroundColor: theme.colors.surfaceVariant,
@@ -175,7 +175,7 @@ const EditGoalScreen: React.FC = () => {
             dense
             style={{ marginBottom: 8 }}
           />
-          <Button mode="outlined" onPress={() => setShowDatePicker(true)} style={{ marginBottom: 4 }}>
+          <Button mode="outlined" onPress={() => setShowDatePicker(true)} style={{ marginBottom: 4, borderRadius: theme.roundness }}>
             {form.target_date ? `Target date: ${form.target_date}` : 'Set target date (optional)'}
           </Button>
           {form.target_date ? (
@@ -220,7 +220,7 @@ const EditGoalScreen: React.FC = () => {
           />
         </SectionCard>
 
-        <SectionCard title="Linked Assets">
+        <SectionCard title="Linked Assets" style={{ marginBottom: 12 }}>
           {assets.length === 0 ? (
             <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>No assets to link yet.</Text>
           ) : (
@@ -255,10 +255,11 @@ const EditGoalScreen: React.FC = () => {
           )}
         </SectionCard>
 
-        <SectionCard>
+        <SectionCard style={{ marginBottom: 24 }}>
           <Button
             mode="contained"
             onPress={saveGoal}
+            style={{ borderRadius: theme.roundness }}
             disabled={!form.name.trim() || rupeesToPaise(form.target || '0') <= 0 || !dateValid}
           >
             Save Changes

@@ -113,43 +113,84 @@ export const DistributionPie: React.FC<{ data: PieDatum[] }> = ({ data }) => {
   );
   const pcts = floored.map((v, i) => v + (bumped.has(i) ? 1 : 0));
 
-  let cumAngle = 0;
-  const slices = data.map((d, i) => {
-    const angle = (d.value / Math.max(total, 1)) * 360;
-    const s = { ...d, startAngle: cumAngle, endAngle: cumAngle + angle, pct: pcts[i] };
-    cumAngle += angle;
-    return s;
-  });
+  const items = data.map((d, i) => ({
+    ...d,
+    pct: pcts[i],
+  })).filter((x) => x.value > 0);
+
+  if (items.length === 0) {
+    return (
+      <View style={{ paddingVertical: 12, alignItems: 'center', justifyContent: 'center' }}>
+        <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>No assets added yet</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <Svg width={PIE_SIZE} height={PIE_SIZE} style={{ flexShrink: 0 }}>
-        {slices.map((s) => (
-          <Path key={s.name} d={slicePath(s.startAngle, s.endAngle)} fill={s.color} />
+    <View style={{ width: '100%', gap: 16 }}>
+      {/* Segmented Bar */}
+      <View style={{ height: 16, borderRadius: 8, flexDirection: 'row', overflow: 'hidden', backgroundColor: theme.colors.outlineVariant }}>
+        {items.map((item) => (
+          <View
+            key={item.name}
+            style={{
+              width: `${item.pct}%`,
+              backgroundColor: item.color,
+              height: '100%',
+            }}
+          />
         ))}
-      </Svg>
-      <View style={{ flex: 1, gap: 8, paddingLeft: 12 }}>
-        {slices.map((s) => (
-          <View key={s.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: s.color, flexShrink: 0 }} />
+      </View>
+
+      {/* Grid Legend */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 }}>
+        {items.map((item) => (
+          <View
+            key={item.name}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              width: '48%',
+            }}
+          >
+            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: item.color, flexShrink: 0 }} />
             <Text
               variant="labelSmall"
               numberOfLines={1}
-              style={{ flex: 1, color: theme.colors.onSurfaceVariant }}
+              style={{ flex: 1, color: theme.colors.onSurfaceVariant, fontSize: 12, fontWeight: '500' }}
             >
-              {s.name}
+              {item.name}
             </Text>
             <Text
               variant="labelSmall"
-              style={{ color: theme.colors.onSurface, fontWeight: '700', flexShrink: 0 }}
+              style={{ color: theme.colors.onSurface, fontWeight: '700', fontSize: 12 }}
             >
-              {s.pct}%
+              {item.pct}%
             </Text>
           </View>
         ))}
       </View>
     </View>
   );
+};
+
+const hexToRgba = (hex: string, alpha: number): string => {
+  if (!hex) return `rgba(128, 128, 128, ${alpha})`;
+  if (hex.startsWith('rgba')) {
+    return hex.replace(/[\d\.]+\)$/g, `${alpha})`);
+  }
+  if (hex.startsWith('rgb')) {
+    return hex.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  }
+  let c = hex.replace('#', '');
+  if (c.length === 3) {
+    c = c.split('').map((char) => char + char).join('');
+  }
+  const r = parseInt(c.substring(0, 2), 16) || 0;
+  const g = parseInt(c.substring(2, 4), 16) || 0;
+  const b = parseInt(c.substring(4, 6), 16) || 0;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
 export const TrendLine: React.FC<{
@@ -162,23 +203,36 @@ export const TrendLine: React.FC<{
     <LineChart
       data={{
         labels,
-        datasets: datasets.map((d) => ({ data: d.data, color: () => d.color, strokeWidth: 2 })),
-        legend,
+        datasets: datasets.map((d) => ({
+          data: d.data,
+          color: (opacity = 1) => hexToRgba(d.color, opacity),
+          strokeWidth: 3,
+        })),
+        legend: legend && legend.length > 1 ? legend : undefined,
       }}
       width={chartWidth}
       height={180}
-      withInnerLines={false}
+      withVerticalLines={false}
+      withHorizontalLines={true}
+      withDots={labels.length < 15}
       fromZero
+      formatYLabel={(val) => {
+        const num = parseFloat(val);
+        if (isNaN(num)) return val;
+        if (num >= 100000) return `₹${(num / 100000).toFixed(1)}L`;
+        if (num >= 1000) return `₹${(num / 1000).toFixed(0)}k`;
+        return `₹${num}`;
+      }}
       chartConfig={{
         backgroundGradientFrom: theme.colors.surface,
         backgroundGradientTo: theme.colors.surface,
         decimalPlaces: 0,
-        color: (o = 1) => (theme.dark ? `rgba(255,255,255,${o})` : `rgba(20,22,27,${o})`),
+        color: (o = 1) => (theme.dark ? `rgba(255,255,255,${o})` : `rgba(24,24,24,${o})`),
         labelColor: () => theme.colors.onSurfaceVariant,
-        propsForDots: { r: '3' },
+        propsForDots: { r: '3.5', strokeWidth: '1.5', stroke: theme.colors.surface },
       }}
-      bezier
-      style={{ borderRadius: 12 }}
+      bezier={labels.length > 2}
+      style={{ borderRadius: theme.roundness }}
     />
   );
 };

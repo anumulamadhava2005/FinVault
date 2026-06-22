@@ -31,7 +31,7 @@ const KIND_ICONS: Record<string, string> = {
 };
 
 const KIND_COLORS: Record<string, string> = {
-  sip_due: palette.lime,
+  sip_due: palette.good,
   asset_gain: palette.good,
   asset_loss: palette.danger,
   stale_price: palette.warn,
@@ -39,7 +39,7 @@ const KIND_COLORS: Record<string, string> = {
   goal_deadline: palette.warn,
   goal_behind: palette.warn,
   goal_overdue: palette.danger,
-  info: palette.muted,
+  info: '#71717A',
 };
 
 interface NotificationBellProps {
@@ -58,20 +58,20 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ kinds, color, onGen
   const [notifications, setNotifications] = useState<ReturnType<typeof getNotifications>>([]);
 
   const load = useCallback(() => {
-    setUnread(getUnreadCount(userId));
+    setUnread(getUnreadCount(userId!));
   }, [userId, refreshKey]);
 
   useFocusEffect(load);
 
   const handleOpen = () => {
-    const all = getNotifications(userId);
+    const all = getNotifications(userId!);
     const filtered = kinds ? all.filter((n) => kinds.includes(n.kind)) : all;
     setNotifications(filtered);
     setOpen(true);
   };
 
   const handleMarkAllRead = () => {
-    markAllRead(userId);
+    markAllRead(userId!);
     setUnread(0);
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: 1 })));
     onGenerate?.();
@@ -103,7 +103,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ kinds, color, onGen
       </Pressable>
 
       <Portal>
-        <Dialog visible={open} onDismiss={() => setOpen(false)} style={{ maxHeight: '85%' }}>
+        <Dialog visible={open} onDismiss={() => setOpen(false)} style={{ maxHeight: '85%', borderRadius: theme.roundness }}>
           <Dialog.Title>Notifications</Dialog.Title>
           <Dialog.ScrollArea style={{ maxHeight: 420 }}>
             <ScrollView>
@@ -124,7 +124,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ kinds, color, onGen
               ) : (
                 notifications.map((n, i) => {
                   const iconName = KIND_ICONS[n.kind] ?? 'information-outline';
-                  const iconClr = KIND_COLORS[n.kind] ?? palette.muted;
+                  const iconClr = KIND_COLORS[n.kind] ?? '#71717A';
                   return (
                     <React.Fragment key={n.id}>
                       <Pressable

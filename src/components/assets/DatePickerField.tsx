@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
-import { Button, HelperText, TextInput } from 'react-native-paper';
+import { Button, HelperText, TextInput, useTheme } from 'react-native-paper';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 import { formatDisplayDate, parseISO } from '../../utils/date';
@@ -22,6 +22,7 @@ const DatePickerField: React.FC<DatePickerFieldProps> = ({
   dense = true,
   clearable = false,
 }) => {
+  const theme = useTheme();
   const [showPicker, setShowPicker] = useState(false);
   const [iosPending, setIosPending] = useState<Date | null>(null);
 
@@ -94,7 +95,7 @@ const DatePickerField: React.FC<DatePickerFieldProps> = ({
         onRequestClose={cancelIos}
       >
         <View style={styles.iosOverlay}>
-          <View style={styles.iosSheet}>
+          <View style={[styles.iosSheet, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outline, borderTopWidth: 1 }]}>
             <View style={styles.iosActions}>
               <Button onPress={cancelIos}>Cancel</Button>
               <Button mode="contained" onPress={confirmIos}>Done</Button>
@@ -104,7 +105,8 @@ const DatePickerField: React.FC<DatePickerFieldProps> = ({
               mode="date"
               display="spinner"
               onChange={handleIosChange}
-              style={styles.iosPicker}
+              textColor={theme.colors.onSurface}
+              style={[styles.iosPicker, { backgroundColor: theme.colors.surface }]}
             />
           </View>
         </View>
@@ -120,9 +122,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   iosSheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
     paddingBottom: 32,
   },
   iosActions: {
@@ -132,7 +133,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   iosPicker: {
-    backgroundColor: '#fff',
+    height: 220,
   },
 });
 

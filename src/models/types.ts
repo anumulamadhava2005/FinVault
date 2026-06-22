@@ -61,6 +61,7 @@ export interface AssetImage {
   uri: string;
   label: string | null;
   created_at: string;
+  local_path?: string | null;
 }
 
 export interface SIPSchedule {
@@ -105,6 +106,7 @@ export interface Expense {
   expense_date: string;
   spent_by_id: string | null;
   notes: string | null;
+  bill_uri: string | null;
 }
 
 export interface Income {

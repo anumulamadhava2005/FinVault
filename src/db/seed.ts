@@ -1,16 +1,89 @@
 /**
- * Seeds a single demo user with realistic data so every screen is populated on
- * first launch — mirrors the web app's sample data (and the goal figures from
- * the design). All money is paise. Returns the created user's id.
+ * Seed helpers to populate FinVault database.
+ * Seeds either core metadata only (for fresh profiles) or full realistic portfolios
+ * (for demo mode) using the custom signed-up user's information.
  */
 import type { SQLiteDatabase } from 'expo-sqlite';
 import * as Crypto from 'expo-crypto';
+import { encryptText } from '../utils/crypto';
 
 const uid = () => Crypto.randomUUID();
 const R = (rupees: number) => Math.round(rupees * 100); // rupees -> paise
 
-export const seedDemoData = (db: SQLiteDatabase): string => {
-  const userId = uid();
+/**
+ * Seeds core lookup data (asset types and default expense categories) for a new user.
+ * This is required even for non-demo (blank) users so drop-downs work.
+ * Returns a mapping of asset type slugs to their created UUIDs.
+ */
+export const seedInitialMetadata = (db: SQLiteDatabase, userId: string): Record<string, string> => {
+  const assetTypesMap: Record<string, string> = {};
+  
+  db.withTransactionSync(() => {
+    // 1. Core Asset Types
+    const types = [
+      ['Mutual Funds', 'mutual_fund'],
+      ['Equity', 'equity'],
+      ['Fixed Deposit', 'fd'],
+      ['Real Estate', 'real_estate'],
+      ['Digital Gold', 'digital_gold'],
+      ['Gold', 'physical_gold'],
+      ['Sovereign Gold Bond', 'sgb'],
+      ['PPF', 'ppf'],
+    ];
+    
+    types.forEach(([name, slug], i) => {
+      // Check if already exists
+      const existing = db.getFirstSync<{ id: string }>('SELECT id FROM asset_types WHERE slug = ?', [slug]);
+      if (existing) {
+        assetTypesMap[slug] = existing.id;
+      } else {
+        const id = uid();
+        assetTypesMap[slug] = id;
+        db.runSync(
+          'INSERT INTO asset_types (id, name, slug, sort_order) VALUES (?, ?, ?, ?)',
+          [id, name, slug, i]
+        );
+      }
+    });
+
+    // 2. Core Expense Categories
+    const categories = [
+      ['Food & Dining', 25000, '#E0922B'],
+      ['Transport', 8000, '#4A7C6F'],
+      ['Utilities', 6000, '#7FB5A8'],
+      ['Rent', 35000, '#2D3142'],
+      ['Shopping', 12000, '#D4956A'],
+      ['Health', 5000, '#52A77E'],
+      ['Entertainment', 6000, '#9DD1C2'],
+    ];
+
+    categories.forEach(([name, budget, color], i) => {
+      const existing = db.getFirstSync<{ id: string }>('SELECT id FROM expense_categories WHERE user_id = ? AND name = ?', [userId, name]);
+      if (!existing) {
+        db.runSync(
+          `INSERT INTO expense_categories (id, user_id, name, is_system, budget_amount, sort_order, color_hex)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [uid(), userId, name, 1, R(budget as number), i, color]
+        );
+      }
+    });
+  });
+
+  return assetTypesMap;
+};
+
+/**
+ * Seeds a full portfolio of realistic demo data for the signed-up user.
+ * Encrypts Vault passwords using the masterPassword.
+ */
+export const seedDemoData = (
+  db: SQLiteDatabase,
+  userId: string,
+  masterPassword?: string
+): void => {
+  // Ensure metadata exists first
+  const types = seedInitialMetadata(db, userId);
+
   const ins = (table: string, row: Record<string, unknown>) => {
     const keys = Object.keys(row);
     const vals = keys.map((k) => {
@@ -24,38 +97,18 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
   };
 
   db.withTransactionSync(() => {
-    ins('users', {
-      id: userId,
-      full_name: 'Aarav Sharma',
-      email: 'demo@finvault.local',
-      password_hash: '',
-      date_of_birth: '1988-04-12',
-      risk_profile: 'moderate',
-      phone: '+91 98000 12345',
-      currency: 'INR',
-      monthly_income: R(180000),
-      created_at: '2024-01-01',
-    });
-    ins('user_preferences', { user_id: userId, theme: 'system', sip_reminder_days: 3, auto_lock_minutes: 15 });
+    // Clean slate for demo seeding (except metadata)
+    db.runSync('DELETE FROM assets WHERE user_id = ?', [userId]);
+    db.runSync('DELETE FROM loans WHERE user_id = ?', [userId]);
+    db.runSync('DELETE FROM insurance_policies WHERE user_id = ?', [userId]);
+    db.runSync('DELETE FROM financial_goals WHERE user_id = ?', [userId]);
+    db.runSync('DELETE FROM expenses WHERE user_id = ?', [userId]);
+    db.runSync('DELETE FROM income WHERE user_id = ?', [userId]);
+    db.runSync('DELETE FROM vault_credentials WHERE user_id = ?', [userId]);
+    db.runSync('DELETE FROM vault_credential_categories WHERE user_id = ?', [userId]);
+    db.runSync('DELETE FROM notifications WHERE user_id = ?', [userId]);
 
-    // --- Asset types ---
-    const types: Record<string, string> = {};
-    [
-      ['Mutual Funds', 'mutual_fund'],
-      ['Equity', 'equity'],
-      ['Fixed Deposit', 'fd'],
-      ['Real Estate', 'real_estate'],
-      ['Digital Gold', 'digital_gold'],
-      ['Gold', 'physical_gold'],
-      ['Sovereign Gold Bond', 'sgb'],
-      ['PPF', 'ppf'],
-    ].forEach(([name, slug], i) => {
-      const id = uid();
-      types[slug] = id;
-      ins('asset_types', { id, name, slug, sort_order: i });
-    });
-
-    // --- Assets (current_value drives goal progress, matching the design) ---
+    // --- Assets (current_value drives goal progress) ---
     const A = (
       type: string,
       name: string,
@@ -83,6 +136,7 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
       });
       return id;
     };
+
     const aMidcap = A('mutual_fund', 'HDFC Mid Cap Fund', 800000, 1756000, 12000, {
       isin: 'INF179K01AA4',
       is_sip: 1,
@@ -128,26 +182,22 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
     const nextMonth = new Date();
     nextMonth.setMonth(nextMonth.getMonth() + 1);
     const nextDue = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
-    [
-      [aMidcap, R(5000)],
-    ].forEach(([assetId, amount]) => {
-      ins('sip_schedules', {
-        id: uid(),
-        user_id: userId,
-        asset_id: assetId,
-        amount,
-        frequency: 'monthly',
-        next_due_date: nextDue,
-        status: 'active',
-        day_of_month: 1,
-        annual_step_up_pct: 10,
-        start_date: '2022-07-01',
-        end_date: null,
-        linked_bank: null,
-      });
+    ins('sip_schedules', {
+      id: uid(),
+      user_id: userId,
+      asset_id: aMidcap,
+      amount: R(5000),
+      frequency: 'monthly',
+      next_due_date: nextDue,
+      status: 'active',
+      day_of_month: 1,
+      annual_step_up_pct: 10,
+      start_date: '2022-07-01',
+      end_date: null,
+      linked_bank: null,
     });
 
-    // --- Goals (linked to assets; progress = sum of linked current values) ---
+    // --- Goals ---
     const G = (
       name: string,
       goalType: string,
@@ -177,7 +227,7 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
     G('Retirement Fund', 'retirement', 5000000, '2045-12-31', aMidcap);
     G('Child Education', 'education', 3000000, '2035-06-30', aEquity);
     G('Europe Trip', 'travel', 300000, '2026-12-31', aGold);
-    G('Emergency Fund', 'emergency', 500000, '2025-12-31', aFd); // target date past -> Overdue
+    G('Emergency Fund', 'emergency', 500000, '2025-12-31', aFd);
 
     // --- Loans ---
     const L = (
@@ -254,49 +304,38 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
     P('health', 'Optima Restore', 'Star Health', 1000000, 22000, 'yearly', '2027-03-31');
     P('vehicle', 'Car Comprehensive', 'ICICI Lombard', 800000, 12000, 'yearly', '2027-01-15');
 
-    // --- Expense categories + a month of expenses ---
-    const cats: { id: string; name: string }[] = [];
-    [
-      ['Food & Dining', 25000, '#E0922B'],
-      ['Transport', 8000, '#4A7C6F'],
-      ['Utilities', 6000, '#7FB5A8'],
-      ['Rent', 35000, '#2D3142'],
-      ['Shopping', 12000, '#D4956A'],
-      ['Health', 5000, '#52A77E'],
-      ['Entertainment', 6000, '#9DD1C2'],
-    ].forEach(([name, budget, color], i) => {
-      const id = uid();
-      cats.push({ id, name: name as string });
-      ins('expense_categories', {
-        id,
-        user_id: userId,
-        name,
-        is_system: true,
-        budget_amount: R(budget as number),
-        sort_order: i,
-        color_hex: color,
-      });
-    });
+    // --- Expenses (seeded category mapping) ---
+    const cats = db.getAllSync<{ id: string; name: string }>(
+      'SELECT id, name FROM expense_categories WHERE user_id = ? ORDER BY sort_order',
+      [userId]
+    );
+    const findCatIdx = (name: string) => cats.findIndex((c) => c.name === name);
+
     const ym = new Date().toISOString().slice(0, 7);
-    const E = (catIdx: number, amount: number, desc: string, day: string) =>
-      ins('expenses', {
-        id: uid(),
-        user_id: userId,
-        category_id: cats[catIdx].id,
-        amount: R(amount),
-        description: desc,
-        expense_date: `${ym}-${day}`,
-        spent_by_id: null,
-        notes: null,
-      });
-    E(0, 1850, 'Groceries — BigBasket', '03');
-    E(0, 640, 'Dinner', '08');
-    E(1, 1200, 'Fuel', '05');
-    E(2, 2400, 'Electricity bill', '10');
-    E(3, 35000, 'Monthly rent', '01');
-    E(4, 4500, 'Clothing', '12');
-    E(5, 1800, 'Pharmacy', '14');
-    E(6, 1200, 'Movie night', '15');
+    const E = (catName: string, amount: number, desc: string, day: string) => {
+      const idx = findCatIdx(catName);
+      if (idx !== -1) {
+        ins('expenses', {
+          id: uid(),
+          user_id: userId,
+          category_id: cats[idx].id,
+          amount: R(amount),
+          description: desc,
+          expense_date: `${ym}-${day}`,
+          spent_by_id: null,
+          notes: null,
+        });
+      }
+    };
+    
+    E('Food & Dining', 1850, 'Groceries — BigBasket', '03');
+    E('Food & Dining', 640, 'Dinner', '08');
+    E('Transport', 1200, 'Fuel', '05');
+    E('Utilities', 2400, 'Electricity bill', '10');
+    E('Rent', 35000, 'Monthly rent', '01');
+    E('Shopping', 4500, 'Clothing', '12');
+    E('Health', 1800, 'Pharmacy', '14');
+    E('Entertainment', 1200, 'Movie night', '15');
 
     // --- Income ---
     ins('income', { id: uid(), user_id: userId, amount: R(180000), source: 'Salary', income_date: `${ym}-01` });
@@ -304,6 +343,10 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
     // --- Vault ---
     const vcat = uid();
     ins('vault_credential_categories', { id: vcat, user_id: userId, name: 'Banking', icon: 'bank' });
+    
+    // Encrypt demo credentials using user's password if provided
+    const encKey = masterPassword || 'defaultSecurePassword123';
+    
     [
       ['HDFC NetBanking', 'aarav.s', 'Str0ng!Pass#22', 'https://netbanking.hdfcbank.com', 88],
       ['Zerodha Kite', 'AS1234', 'Tr@de2026Secure', 'https://kite.zerodha.com', 76],
@@ -314,7 +357,7 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
         category_id: vcat,
         service,
         username,
-        password_enc: pwd, // standalone demo: stored as-is
+        password_enc: encryptText(pwd as string, encKey),
         url,
         notes: null,
         password_strength: strength,
@@ -332,6 +375,4 @@ export const seedDemoData = (db: SQLiteDatabase): string => {
       created_at: new Date().toISOString(),
     });
   });
-
-  return userId;
 };

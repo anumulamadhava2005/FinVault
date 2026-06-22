@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Checkbox, Dialog, Portal, Text, TextInput, useTheme } from 'react-native-paper';
+import BouncePressable from '../../components/BouncePressable';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { File, Directory, Paths } from 'expo-file-system/next';
+import { File, Directory, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 import { useApp } from '../../context/AppContext';
 import { useDataSafe } from '../../hooks/useData';
@@ -50,6 +55,85 @@ const getMimeType = (filename: string): string => {
   return map[ext] ?? 'application/octet-stream';
 };
 
+const ZoomableImage: React.FC<{ uri: string }> = ({ uri }) => {
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((e) => {
+      scale.value = Math.max(1, savedScale.value * e.scale);
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      if (scale.value <= 1.05) {
+        scale.value = withTiming(1);
+        savedScale.value = 1;
+        translateX.value = withTiming(0);
+        translateY.value = withTiming(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+      }
+    });
+
+  const panGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      if (scale.value > 1) {
+        translateX.value = savedTranslateX.value + e.translationX;
+        translateY.value = savedTranslateY.value + e.translationY;
+      }
+    })
+    .onEnd(() => {
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onStart(() => {
+      if (scale.value > 1) {
+        scale.value = withTiming(1);
+        savedScale.value = 1;
+        translateX.value = withTiming(0);
+        translateY.value = withTiming(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+      } else {
+        scale.value = withTiming(2.5);
+        savedScale.value = 2.5;
+      }
+    });
+
+  const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture, doubleTap);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { scale: scale.value },
+      ],
+    };
+  });
+
+  return (
+    <GestureDetector gesture={composedGesture}>
+      <Animated.View style={[{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }, animatedStyle]}>
+        <Image
+          source={{ uri }}
+          style={styles.lightboxImage}
+          contentFit="contain"
+          contentPosition="center"
+          priority="high"
+        />
+      </Animated.View>
+    </GestureDetector>
+  );
+};
+
 const AssetDetailScreen: React.FC = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { userId, refresh } = useApp();
@@ -73,7 +157,7 @@ const AssetDetailScreen: React.FC = () => {
        LEFT JOIN goal_asset_links gal ON gal.goal_id = fg.id AND gal.asset_id = ?
        WHERE fg.user_id = ? AND fg.is_completed = 0
        ORDER BY fg.name`,
-      [id, userId],
+      [id, userId!],
     ),
   );
 
@@ -84,7 +168,7 @@ const AssetDetailScreen: React.FC = () => {
     ),
   );
 
-  const { sip, save: saveSIP } = useSIPConfig(userId, id ?? '');
+  const { sip, save: saveSIP } = useSIPConfig(userId!, id ?? '');
   const [sipOpen, setSipOpen] = useState(false);
   const [goalLinkOpen, setGoalLinkOpen] = useState(false);
   const [goalDrafts, setGoalDrafts] = useState<GoalDraft[]>([]);
@@ -122,6 +206,22 @@ const AssetDetailScreen: React.FC = () => {
 
   // ── Attachment helpers ───────────────────────────────────────────────────────
 
+  const copyToPersistentStorage = async (uri: string, originalName?: string): Promise<string> => {
+    try {
+      const attachmentsDir = new Directory(Paths.document, 'attachments');
+      try { attachmentsDir.create({ intermediates: true }); } catch { /* already exists */ }
+      const ext = uri.split('.').pop()?.split('?')[0].toLowerCase() || 'jpg';
+      const name = originalName || `img_${newId()}.${ext}`;
+      const destFile = new File(attachmentsDir, newId() + '_' + name);
+      const srcFile = new File(uri);
+      await srcFile.copy(destFile);
+      return destFile.uri;
+    } catch (err) {
+      console.warn('Failed to copy to persistent storage, using original cached URI:', err);
+      return uri;
+    }
+  };
+
   const openCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (perm.status !== 'granted') {
@@ -132,7 +232,16 @@ const AssetDetailScreen: React.FC = () => {
     if (!result.canceled) {
       const now = nowISO();
       for (const a of result.assets) {
-        insert('asset_images', { id: newId(), asset_id: id ?? '', user_id: userId, uri: a.uri, label: null, created_at: now });
+        const persistentUri = await copyToPersistentStorage(a.uri);
+        insert('asset_images', {
+          id: newId(),
+          asset_id: id ?? '',
+          user_id: userId,
+          uri: persistentUri,
+          label: null,
+          created_at: now,
+          local_path: persistentUri.startsWith('file://') ? decodeURIComponent(persistentUri.replace('file://', '')) : persistentUri,
+        });
       }
       refresh();
     }
@@ -152,7 +261,16 @@ const AssetDetailScreen: React.FC = () => {
     if (!result.canceled) {
       const now = nowISO();
       for (const a of result.assets) {
-        insert('asset_images', { id: newId(), asset_id: id ?? '', user_id: userId, uri: a.uri, label: null, created_at: now });
+        const persistentUri = await copyToPersistentStorage(a.uri, a.fileName || undefined);
+        insert('asset_images', {
+          id: newId(),
+          asset_id: id ?? '',
+          user_id: userId,
+          uri: persistentUri,
+          label: null,
+          created_at: now,
+          local_path: persistentUri.startsWith('file://') ? decodeURIComponent(persistentUri.replace('file://', '')) : persistentUri,
+        });
       }
       refresh();
     }
@@ -166,19 +284,9 @@ const AssetDetailScreen: React.FC = () => {
     });
     if (!result.canceled && result.assets.length > 0) {
       const now = nowISO();
-      // Copy documents to persistent storage (documentDirectory survives app restarts)
-      const attachmentsDir = new Directory(Paths.document, 'attachments');
-      try { attachmentsDir.create({ intermediates: true }); } catch { /* already exists */ }
-
       for (const file of result.assets) {
         const filename = file.name ?? 'document';
-        const destFile = new File(attachmentsDir, newId() + '_' + filename);
-        let persistentUri = file.uri;
-        try {
-          const srcFile = new File(file.uri);
-          await srcFile.copy(destFile);
-          persistentUri = destFile.uri;
-        } catch { /* fallback: store cache URI */ }
+        const persistentUri = await copyToPersistentStorage(file.uri, filename);
         insert('asset_images', {
           id: newId(),
           asset_id: id ?? '',
@@ -186,6 +294,7 @@ const AssetDetailScreen: React.FC = () => {
           uri: persistentUri,
           label: `pdf:${filename}`,
           created_at: now,
+          local_path: persistentUri.startsWith('file://') ? decodeURIComponent(persistentUri.replace('file://', '')) : persistentUri,
         });
       }
       refresh();
@@ -194,7 +303,21 @@ const AssetDetailScreen: React.FC = () => {
 
   const openDocument = async (uri: string, filename: string) => {
     try {
-      // Use expo-file-system/next File API only if needed; share directly with URI
+      if (Platform.OS === 'android') {
+        const contentUri = await FileSystem.getContentUriAsync(uri);
+        const mimeType = getMimeType(filename);
+        try {
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1, // Intent.FLAG_GRANT_READ_URI_PERMISSION
+            type: mimeType,
+          });
+          return;
+        } catch (intentErr) {
+          console.warn('Intent view failed, falling back to shareAsync:', intentErr);
+        }
+      }
+
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
         Alert.alert('Cannot open', 'No document viewer is available on this device.');
@@ -312,12 +435,12 @@ const AssetDetailScreen: React.FC = () => {
       <Stack.Screen options={{ title: asset.name }} />
       <Screen>
         {/* Header */}
-        <SectionCard>
+        <SectionCard style={{ marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <MaterialCommunityIcons name={cfg.icon as any} size={28} color={theme.colors.primary} />
             <View style={{ flex: 1 }}>
-              <Text variant="titleLarge" style={{ fontWeight: '800' }}>{asset.name}</Text>
-              <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+              <Text variant="titleLarge" style={{ fontWeight: '700' }}>{asset.name}</Text>
+              <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
                 {asset.type_name}
                 {asset.isin ? ` · ${asset.isin}` : ''}
                 {asset.ticker ? ` · ${asset.ticker}` : ''}
@@ -327,7 +450,7 @@ const AssetDetailScreen: React.FC = () => {
         </SectionCard>
 
         {/* Performance Chart */}
-        <SectionCard title="Performance">
+        <SectionCard title="Performance" style={{ marginBottom: 12 }}>
           <PerformanceChart
             investedPaise={asset.invested_amount}
             currentPaise={asset.current_value}
@@ -336,17 +459,17 @@ const AssetDetailScreen: React.FC = () => {
         </SectionCard>
 
         {/* Key Metrics */}
-        <SectionCard title="Key Metrics">
+        <SectionCard title="Key Metrics" style={{ marginBottom: 12 }}>
           {/* Invested and Current stacked */}
           <Kpi label={cfg.investedLabel ?? 'Invested'} value={formatINR(asset.invested_amount)} />
-          <View style={{ marginTop: 8 }}>
+          <View style={{ marginTop: 12 }}>
             <Kpi label={cfg.currentValueLabel ?? 'Current'} value={formatINR(asset.current_value)} />
           </View>
-          <Row style={{ marginTop: 8 }}>
+          <Row style={{ marginTop: 12 }}>
             <Kpi label="Total Return" value={formatINR(pnl)} subTone={pnl >= 0 ? 'good' : 'bad'} />
             <Kpi label="Return %" value={`${pnlPct}%`} subTone={pnl >= 0 ? 'good' : 'bad'} />
           </Row>
-          <Row style={{ marginTop: 8 }}>
+          <Row style={{ marginTop: 12 }}>
             {cagr !== 0 ? (
               <Kpi label="CAGR" value={`${cagr >= 0 ? '+' : ''}${cagr}%`} subTone={cagr >= 0 ? 'good' : 'bad'} />
             ) : null}
@@ -357,7 +480,7 @@ const AssetDetailScreen: React.FC = () => {
           </Row>
 
           {(asset.maturity_date || asset.guaranteed_return_pct != null) && (
-            <Row style={{ marginTop: 8 }}>
+            <Row style={{ marginTop: 12 }}>
               {asset.maturity_date ? (
                 <Kpi label="Maturity" value={formatDisplayDate(asset.maturity_date)} />
               ) : null}
@@ -371,7 +494,7 @@ const AssetDetailScreen: React.FC = () => {
           )}
 
           {(asset.price_per_unit != null || asset.current_nav != null) && (
-            <Row style={{ marginTop: 8 }}>
+            <Row style={{ marginTop: 12 }}>
               {asset.price_per_unit != null ? (
                 <Kpi
                   label={cfg.pricePerUnitLabel ?? 'Price per Unit'}
@@ -387,7 +510,7 @@ const AssetDetailScreen: React.FC = () => {
 
         {/* Type-specific extra field details */}
         {extraWithValues.length > 0 && (
-          <SectionCard title={cfg.extraSection ?? 'Details'}>
+          <SectionCard title={cfg.extraSection ?? 'Details'} style={{ marginBottom: 12 }}>
             {extraWithValues.map((f) => {
               const val = details[f.key];
               const displayVal =
@@ -395,8 +518,8 @@ const AssetDetailScreen: React.FC = () => {
                   ? (f.options?.find((o) => o.value === val)?.label ?? val)
                   : val;
               return (
-                <View key={f.key} style={{ marginBottom: 6 }}>
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                <View key={f.key} style={{ marginBottom: 8 }}>
+                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 2 }}>
                     {f.label}
                   </Text>
                   <Text variant="bodyMedium">{displayVal}</Text>
@@ -409,7 +532,7 @@ const AssetDetailScreen: React.FC = () => {
         {/* SIP Block — only for eligible asset types */}
         {SIP_ELIGIBLE_TYPES.has(asset.slug) && (
           asset.is_sip ? (
-            <SectionCard title="SIP">
+            <SectionCard title="SIP" style={{ marginBottom: 12 }}>
               <Row>
                 <Kpi label={cfg.sipMonthlyLabel ?? 'Monthly'} value={formatINR(asset.sip_monthly_amount)} />
                 {sip ? (
@@ -420,7 +543,7 @@ const AssetDetailScreen: React.FC = () => {
                 ) : null}
               </Row>
               {sip?.start_date ? (
-                <Row style={{ marginTop: 8 }}>
+                <Row style={{ marginTop: 12 }}>
                   <Kpi label="Start" value={formatDisplayDate(sip.start_date)} />
                   {sip.end_date ? <Kpi label="End" value={formatDisplayDate(sip.end_date)} /> : null}
                   {sip.linked_bank ? <Kpi label="Bank" value={sip.linked_bank} /> : null}
@@ -430,72 +553,77 @@ const AssetDetailScreen: React.FC = () => {
                 mode="outlined"
                 compact
                 icon="pencil"
-                style={{ marginTop: 10, alignSelf: 'flex-start' }}
+                style={{ marginTop: 12, alignSelf: 'flex-start', borderRadius: theme.roundness }}
                 onPress={() => setSipOpen(true)}
               >
                 Edit SIP
               </Button>
             </SectionCard>
           ) : (
-            <Button
-              mode="outlined"
-              compact
-              icon="autorenew"
-              style={{ alignSelf: 'flex-start' }}
-              onPress={() => setSipOpen(true)}
-            >
-              Set up SIP
-            </Button>
+            <View style={{ paddingHorizontal: 18, marginBottom: 12 }}>
+              <Button
+                mode="outlined"
+                compact
+                icon="autorenew"
+                style={{ alignSelf: 'flex-start', borderRadius: theme.roundness }}
+                onPress={() => setSipOpen(true)}
+              >
+                Set up SIP
+              </Button>
+            </View>
           )
         )}
 
         {/* Linked Goals */}
         <SectionCard
           title="Linked Goals"
+          style={{ marginBottom: 12 }}
           right={
-            <Button compact mode="text" onPress={openManageGoals}>
+            <Button compact mode="text" onPress={openManageGoals} style={{ margin: 0 }}>
               Manage
             </Button>
           }
         >
           {linkedGoals.length === 0 ? (
-            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, lineHeight: 18 }}>
               No goals linked. Tap Manage to link this asset to a financial goal.
             </Text>
           ) : (
             <>
-              {linkedGoals.map((g) => (
-                <View
-                  key={g.id}
-                  style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}
-                >
-                  <Text variant="bodyMedium" style={{ flex: 1 }}>• {g.name}</Text>
-                  <Text
-                    variant="labelSmall"
-                    style={{ color: theme.colors.primary, fontWeight: '700', marginLeft: 8 }}
+              <View style={{ gap: 8 }}>
+                {linkedGoals.map((g) => (
+                  <View
+                    key={g.id}
+                    style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
                   >
-                    {g.allocation_pct ?? 100}%
-                  </Text>
-                </View>
-              ))}
-              {unallocatedPct > 0 && (
-                <View
-                  style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}
-                >
-                  <Text variant="bodyMedium" style={{ flex: 1, color: theme.colors.onSurfaceVariant }}>
-                    • Unallocated
-                  </Text>
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
-                    {unallocatedPct}%
-                  </Text>
-                </View>
-              )}
+                    <Text variant="bodyMedium" style={{ flex: 1 }}>• {g.name}</Text>
+                    <Text
+                      variant="labelSmall"
+                      style={{ color: theme.colors.primary, fontWeight: '700', marginLeft: 8 }}
+                    >
+                      {g.allocation_pct ?? 100}%
+                    </Text>
+                  </View>
+                ))}
+                {unallocatedPct > 0 && (
+                  <View
+                    style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
+                    <Text variant="bodyMedium" style={{ flex: 1, color: theme.colors.onSurfaceVariant }}>
+                      • Unallocated
+                    </Text>
+                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
+                      {unallocatedPct}%
+                    </Text>
+                  </View>
+                )}
+              </View>
             </>
           )}
         </SectionCard>
 
         {/* Attachments */}
-        <SectionCard title={`Attachments${photoList.length > 0 ? ` (${photoList.length})` : ''}`}>
+        <SectionCard title={`Attachments${photoList.length > 0 ? ` (${photoList.length})` : ''}`} style={{ marginBottom: 12 }}>
           {photoItems.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
               {photoItems.map((img) => (
@@ -511,7 +639,7 @@ const AssetDetailScreen: React.FC = () => {
             </ScrollView>
           )}
           {docItems.length > 0 && (
-            <View style={{ marginTop: photoItems.length > 0 ? 8 : 0 }}>
+            <View style={{ marginTop: photoItems.length > 0 ? 12 : 0, gap: 6 }}>
               {docItems.map((doc) => {
                 const filename = doc.label?.replace('pdf:', '') ?? 'document';
                 return (
@@ -528,6 +656,15 @@ const AssetDetailScreen: React.FC = () => {
                       >
                         {filename}
                       </Text>
+                      {doc.local_path ? (
+                        <Text
+                          variant="bodySmall"
+                          numberOfLines={1}
+                          style={{ color: theme.colors.onSurfaceVariant, fontSize: 10, marginTop: 2 }}
+                        >
+                          Path: {doc.local_path}
+                        </Text>
+                      ) : null}
                     </Pressable>
                     <Pressable onPress={() => confirmDeleteImage(doc.id)} style={{ padding: 4 }}>
                       <MaterialCommunityIcons name="delete-outline" size={20} color={palette.danger} />
@@ -538,18 +675,18 @@ const AssetDetailScreen: React.FC = () => {
             </View>
           )}
           {photoList.length === 0 && (
-            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 10 }}>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>
               No attachments yet. Add photos, certificates, or PDF documents.
             </Text>
           )}
-          <Row gap={6} style={{ marginTop: photoList.length > 0 ? 10 : 0 }}>
-            <Button compact icon="camera" mode="outlined" onPress={openCamera} style={{ flex: 1 }}>
+          <Row gap={8} style={{ marginTop: photoList.length > 0 ? 12 : 0 }}>
+            <Button compact icon="camera" mode="outlined" onPress={openCamera} style={{ flex: 1, borderRadius: theme.roundness }}>
               Camera
             </Button>
-            <Button compact icon="image" mode="outlined" onPress={pickSingle} style={{ flex: 1 }}>
+            <Button compact icon="image" mode="outlined" onPress={pickSingle} style={{ flex: 1, borderRadius: theme.roundness }}>
               Gallery
             </Button>
-            <Button compact icon="file-document-outline" mode="outlined" onPress={pickDocument} style={{ flex: 1 }}>
+            <Button compact icon="file-document-outline" mode="outlined" onPress={pickDocument} style={{ flex: 1, borderRadius: theme.roundness }}>
               Document
             </Button>
           </Row>
@@ -557,20 +694,20 @@ const AssetDetailScreen: React.FC = () => {
 
         {/* Notes */}
         {asset.notes ? (
-          <SectionCard title="Notes">
-            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+          <SectionCard title="Notes" style={{ marginBottom: 12 }}>
+            <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, lineHeight: 18 }}>
               {asset.notes}
             </Text>
           </SectionCard>
         ) : null}
 
         {/* Actions */}
-        <SectionCard>
+        <SectionCard style={{ marginBottom: 24 }}>
           <Row gap={8}>
             <Button
               mode="contained"
               icon="pencil"
-              style={{ flex: 1 }}
+              style={{ flex: 1, borderRadius: theme.roundness }}
               onPress={() => router.push(`/assets/${id}/edit` as any)}
             >
               Edit
@@ -579,7 +716,7 @@ const AssetDetailScreen: React.FC = () => {
               mode="outlined"
               icon="delete"
               textColor={palette.danger}
-              style={{ flex: 1 }}
+              style={{ flex: 1, borderRadius: theme.roundness }}
               onPress={handleDelete}
             >
               Delete
@@ -603,13 +740,26 @@ const AssetDetailScreen: React.FC = () => {
         onRequestClose={() => setLightboxUri(null)}
       >
         <View style={styles.lightbox}>
-          <Image
-            source={{ uri: lightboxUri ?? '' }}
-            style={styles.lightboxImage}
-            contentFit="contain"
-            contentPosition="center"
-            priority="high"
-          />
+          {lightboxUri ? (
+            <ZoomableImage uri={lightboxUri} />
+          ) : null}
+          {lightboxUri && photoList.find((img) => img.uri === lightboxUri)?.local_path ? (
+            <View style={{
+              position: 'absolute',
+              bottom: 40,
+              left: 20,
+              right: 20,
+              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+              paddingVertical: 10,
+              paddingHorizontal: 16,
+              borderRadius: 20,
+              alignItems: 'center',
+            }}>
+              <Text style={{ color: '#fff', fontSize: 11, textAlign: 'center' }} numberOfLines={2}>
+                Path: {photoList.find((img) => img.uri === lightboxUri)?.local_path}
+              </Text>
+            </View>
+          ) : null}
           <Pressable style={styles.lightboxClose} onPress={() => setLightboxUri(null)}>
             <MaterialCommunityIcons name="close-circle" size={36} color="#fff" />
           </Pressable>
@@ -618,14 +768,16 @@ const AssetDetailScreen: React.FC = () => {
 
       {/* Goal Link Modal */}
       <Portal>
-        <Dialog visible={goalLinkOpen} onDismiss={() => setGoalLinkOpen(false)}>
-          <Dialog.Title>Link to Goals</Dialog.Title>
+        <Dialog visible={goalLinkOpen} onDismiss={() => setGoalLinkOpen(false)} style={{ borderRadius: theme.roundness }}>
+          <Dialog.Title style={{ fontWeight: '700', color: theme.colors.onSurface, fontSize: 18 }}>
+            Link to Goals
+          </Dialog.Title>
 
           {/* Allocation summary bar */}
-          <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
+          <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
             <Text
               variant="labelSmall"
-              style={{ color: overAllocated ? palette.danger : theme.colors.onSurfaceVariant }}
+              style={{ color: overAllocated ? palette.danger : theme.colors.onSurfaceVariant, fontWeight: '600' }}
             >
               {overAllocated
                 ? `Total exceeds 100% by ${Math.round(totalLinkedPct - 100)}%`
@@ -633,9 +785,9 @@ const AssetDetailScreen: React.FC = () => {
             </Text>
           </View>
 
-          <Dialog.ScrollArea style={{ maxHeight: 380 }}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <View style={{ paddingVertical: 4 }}>
+          <Dialog.ScrollArea style={{ maxHeight: 380, paddingHorizontal: 16 }}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View style={{ paddingVertical: 12, gap: 4 }}>
                 {goalDrafts.length === 0 ? (
                   <Text
                     variant="bodyMedium"
@@ -647,13 +799,21 @@ const AssetDetailScreen: React.FC = () => {
                   goalDrafts.map((g) => (
                     <View
                       key={g.goalId}
-                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4, gap: 8 }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: 8,
+                        paddingHorizontal: 4,
+                        gap: 12,
+                        borderBottomWidth: 1,
+                        borderBottomColor: theme.colors.outlineVariant,
+                      }}
                     >
                       <Checkbox
                         status={g.linked ? 'checked' : 'unchecked'}
                         onPress={() => toggleGoalDraft(g.goalId)}
                       />
-                      <Text variant="bodyMedium" style={{ flex: 1 }} numberOfLines={2}>
+                      <Text variant="bodyMedium" style={{ flex: 1, color: theme.colors.onSurface }} numberOfLines={2}>
                         {g.name}
                       </Text>
                       {g.linked && (
@@ -664,7 +824,7 @@ const AssetDetailScreen: React.FC = () => {
                           mode="outlined"
                           dense
                           right={<TextInput.Affix text="%" />}
-                          style={{ width: 80 }}
+                          style={{ width: 80, backgroundColor: theme.colors.surface }}
                           error={parseFloat(g.pct) <= 0 || isNaN(parseFloat(g.pct))}
                         />
                       )}
@@ -675,15 +835,37 @@ const AssetDetailScreen: React.FC = () => {
             </ScrollView>
           </Dialog.ScrollArea>
 
-          <Dialog.Actions>
-            <Button onPress={() => setGoalLinkOpen(false)}>Cancel</Button>
-            <Button
-              mode="contained"
+          <Dialog.Actions style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 8 }}>
+            <BouncePressable
+              onPress={() => setGoalLinkOpen(false)}
+              style={{
+                paddingVertical: 10,
+                paddingHorizontal: 16,
+                borderRadius: theme.roundness,
+                borderWidth: 1,
+                borderColor: theme.colors.outline,
+                backgroundColor: theme.colors.surface,
+              }}
+            >
+              <Text variant="labelMedium" style={{ fontWeight: '600', color: theme.colors.onSurface, fontSize: 13 }}>
+                Cancel
+              </Text>
+            </BouncePressable>
+            <BouncePressable
               onPress={saveGoalLinks}
               disabled={overAllocated}
+              style={{
+                paddingVertical: 10,
+                paddingHorizontal: 20,
+                borderRadius: theme.roundness,
+                backgroundColor: theme.colors.primary,
+                opacity: overAllocated ? 0.6 : 1,
+              }}
             >
-              Save
-            </Button>
+              <Text variant="labelMedium" style={{ fontWeight: '600', color: theme.colors.onPrimary, fontSize: 13 }}>
+                Save
+              </Text>
+            </BouncePressable>
           </Dialog.Actions>
         </Dialog>
       </Portal>

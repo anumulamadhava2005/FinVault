@@ -14,8 +14,8 @@ const RISK = ['conservative', 'moderate', 'aggressive'];
 const SettingsScreen: React.FC = () => {
   const { userId, refresh, themeMode, setThemeMode } = useApp();
   const theme = useTheme();
-  const user = useData(() => first<User>('SELECT * FROM users WHERE id = ?', [userId]));
-  const prefs = useData(() => first<UserPreferences>('SELECT * FROM user_preferences WHERE user_id = ?', [userId]));
+  const user = useData(() => first<User>('SELECT * FROM users WHERE id = ?', [userId!]));
+  const prefs = useData(() => first<UserPreferences>('SELECT * FROM user_preferences WHERE user_id = ?', [userId!]));
 
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState({ full_name: '', email: '', income: '', risk: 'moderate', dob: '' });
@@ -35,7 +35,7 @@ const SettingsScreen: React.FC = () => {
   };
 
   const saveProfile = () => {
-    update('users', userId, {
+    update('users', userId!, {
       full_name: form.full_name.trim(),
       email: form.email.trim(),
       monthly_income: rupeesToPaise(form.income || '0'),
@@ -47,7 +47,7 @@ const SettingsScreen: React.FC = () => {
   };
 
   const updatePref = (key: keyof UserPreferences, value: number) => {
-    update('user_preferences', userId, { [key]: value } as any);
+    update('user_preferences', userId!, { [key]: value } as any);
     // user_preferences PK is user_id, not id — use direct update:
     refresh();
   };
@@ -57,15 +57,15 @@ const SettingsScreen: React.FC = () => {
   return (
     <>
       <Screen>
-        <SectionCard title="Profile" right={<Button compact onPress={openEdit}>Edit</Button>}>
+        <SectionCard title="Profile" right={<Button mode="outlined" compact onPress={openEdit} style={{ borderRadius: theme.roundness }}>Edit</Button>} style={{ marginBottom: 12 }}>
           <List.Item title={user.full_name} description="Name" left={(p) => <List.Icon {...p} icon="account" />} />
           <List.Item title={user.email} description="Email" left={(p) => <List.Icon {...p} icon="email" />} />
           <List.Item title={formatINR(user.monthly_income)} description="Monthly income" left={(p) => <List.Icon {...p} icon="cash" />} />
           <List.Item title={user.risk_profile} description="Risk profile" left={(p) => <List.Icon {...p} icon="chart-bell-curve" />} titleStyle={{ textTransform: 'capitalize' }} />
         </SectionCard>
 
-        <SectionCard title="Appearance">
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>Theme</Text>
+        <SectionCard title="Appearance" style={{ marginBottom: 12 }}>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>Theme</Text>
           <SegmentedButtons
             value={themeMode}
             onValueChange={(v) => setThemeMode(v as any)}
@@ -77,7 +77,7 @@ const SettingsScreen: React.FC = () => {
           />
         </SectionCard>
 
-        <SectionCard title="Preferences">
+        <SectionCard title="Preferences" style={{ marginBottom: 12 }}>
           <List.Item
             title="SIP reminder"
             description={`${prefs?.sip_reminder_days ?? 3} days before due`}
@@ -90,14 +90,14 @@ const SettingsScreen: React.FC = () => {
           />
         </SectionCard>
 
-        <SectionCard title="About">
+        <SectionCard title="About" style={{ marginBottom: 12 }}>
           <List.Item title="FinVault Mobile" description="v1.0.0 · standalone (local SQLite)" left={(p) => <List.Icon {...p} icon="information" />} />
           <List.Item title="Data" description="All data is stored on this device only." left={(p) => <List.Icon {...p} icon="database" />} />
         </SectionCard>
       </Screen>
 
       <Portal>
-        <Dialog visible={editOpen} onDismiss={() => setEditOpen(false)}>
+        <Dialog visible={editOpen} onDismiss={() => setEditOpen(false)} style={{ borderRadius: theme.roundness }}>
           <Dialog.Title>Edit Profile</Dialog.Title>
           <Dialog.Content>
             <TextInput label="Full name" value={form.full_name} onChangeText={(v) => set('full_name', v)} mode="outlined" dense style={{ marginBottom: 8 }} />

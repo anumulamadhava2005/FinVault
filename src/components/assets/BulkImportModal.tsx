@@ -11,6 +11,7 @@ import {
 } from 'react-native-paper';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import BouncePressable from '../BouncePressable';
 
 import { newId, tx } from '../../db';
 import type { AssetType } from '../../models/types';
@@ -257,23 +258,23 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
   return (
     <Portal>
-      <Dialog visible={visible} onDismiss={handleDismiss} style={{ maxHeight: '92%' }}>
-        <Dialog.Title>
+      <Dialog visible={visible} onDismiss={handleDismiss} style={{ borderRadius: theme.roundness, maxHeight: '92%' }}>
+        <Dialog.Title style={{ fontWeight: '700', color: theme.colors.onSurface, fontSize: 18 }}>
           {step === 'pick' ? 'Import Assets from CSV' : step === 'map' ? `Map Columns · ${rows.length} rows` : 'Import Complete'}
         </Dialog.Title>
 
         {step === 'pick' && (
           <>
             <Dialog.Content>
-              <Text variant="bodyMedium" style={{ marginBottom: 10 }}>
+              <Text variant="bodyMedium" style={{ marginBottom: 10, color: theme.colors.onSurfaceVariant }}>
                 Pick a CSV file from your device. The first row must be column headers.
                 Columns are matched to asset fields automatically — review the mapping before importing.
               </Text>
               <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 4 }}>
                 Required columns:{' '}
-                <Text style={{ fontWeight: '700' }}>name</Text>,{' '}
-                <Text style={{ fontWeight: '700' }}>asset_type</Text>,{' '}
-                <Text style={{ fontWeight: '700' }}>invested_amount</Text>
+                <Text style={{ fontWeight: '700', color: theme.colors.onSurface }}>name</Text>,{' '}
+                <Text style={{ fontWeight: '700', color: theme.colors.onSurface }}>asset_type</Text>,{' '}
+                <Text style={{ fontWeight: '700', color: theme.colors.onSurface }}>invested_amount</Text>
               </Text>
               <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
                 asset_type must match one of: {assetTypes.map((t) => t.slug).join(', ')}
@@ -282,27 +283,47 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
                 <HelperText type="error" style={{ marginTop: 6 }}>{parseError}</HelperText>
               ) : null}
             </Dialog.Content>
-            <Dialog.Actions>
-              <Button onPress={handleDismiss}>Cancel</Button>
-              <Button
-                mode="contained"
-                loading={loading}
-                disabled={loading}
-                onPress={pickFile}
-                icon="file-delimited"
+            <Dialog.Actions style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 8 }}>
+              <BouncePressable
+                onPress={handleDismiss}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  borderRadius: theme.roundness,
+                  borderWidth: 1,
+                  borderColor: theme.colors.outline,
+                  backgroundColor: theme.colors.surface,
+                }}
               >
-                Pick CSV File
-              </Button>
+                <Text variant="labelMedium" style={{ fontWeight: '600', color: theme.colors.onSurface, fontSize: 13 }}>
+                  Cancel
+                </Text>
+              </BouncePressable>
+              <BouncePressable
+                onPress={pickFile}
+                disabled={loading}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  borderRadius: theme.roundness,
+                  backgroundColor: theme.colors.primary,
+                  opacity: loading ? 0.6 : 1,
+                }}
+              >
+                <Text variant="labelMedium" style={{ fontWeight: '600', color: theme.colors.onPrimary, fontSize: 13 }}>
+                  {loading ? 'Reading CSV...' : 'Pick CSV File'}
+                </Text>
+              </BouncePressable>
             </Dialog.Actions>
           </>
         )}
 
         {step === 'map' && (
           <>
-            <Dialog.ScrollArea style={{ maxHeight: 440 }}>
-              <ScrollView keyboardShouldPersistTaps="handled">
-                <View style={{ paddingVertical: 8, gap: 8 }}>
-                  <Text variant="labelMedium" style={{ marginBottom: 2 }}>
+            <Dialog.ScrollArea style={{ maxHeight: 440, paddingHorizontal: 16 }}>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <View style={{ paddingVertical: 12, gap: 12 }}>
+                  <Text variant="labelMedium" style={{ marginBottom: 2, color: theme.colors.onSurfaceVariant }}>
                     Map each CSV column to an asset field:
                   </Text>
 
@@ -323,7 +344,7 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
                             compact
                             mode="outlined"
                             onPress={() => setOpenMenuIdx(i)}
-                            style={{ flex: 1.5 }}
+                            style={{ flex: 1.5, borderRadius: theme.roundness }}
                             contentStyle={{ paddingHorizontal: 2 }}
                             labelStyle={{ fontSize: 11 }}
                           >
@@ -347,7 +368,7 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
                   {previewRows.length > 0 && (
                     <View style={{ marginTop: 12 }}>
-                      <Text variant="labelMedium" style={{ marginBottom: 4 }}>
+                      <Text variant="labelMedium" style={{ marginBottom: 4, color: theme.colors.onSurface }}>
                         Preview (first {previewRows.length} rows):
                       </Text>
                       {previewRows.map((row, ri) => (
@@ -371,16 +392,37 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
                 </View>
               </ScrollView>
             </Dialog.ScrollArea>
-            <Dialog.Actions>
-              <Button onPress={() => setStep('pick')}>Back</Button>
-              <Button
-                mode="contained"
-                disabled={!canImport()}
-                onPress={doImport}
-                icon="upload"
+            <Dialog.Actions style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 8 }}>
+              <BouncePressable
+                onPress={() => setStep('pick')}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  borderRadius: theme.roundness,
+                  borderWidth: 1,
+                  borderColor: theme.colors.outline,
+                  backgroundColor: theme.colors.surface,
+                }}
               >
-                Import {rows.length} rows
-              </Button>
+                <Text variant="labelMedium" style={{ fontWeight: '600', color: theme.colors.onSurface, fontSize: 13 }}>
+                  Back
+                </Text>
+              </BouncePressable>
+              <BouncePressable
+                onPress={doImport}
+                disabled={!canImport()}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  borderRadius: theme.roundness,
+                  backgroundColor: theme.colors.primary,
+                  opacity: !canImport() ? 0.6 : 1,
+                }}
+              >
+                <Text variant="labelMedium" style={{ fontWeight: '600', color: theme.colors.onPrimary, fontSize: 13 }}>
+                  Import {rows.length} rows
+                </Text>
+              </BouncePressable>
             </Dialog.Actions>
           </>
         )}
@@ -388,7 +430,7 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
         {step === 'result' && result && (
           <>
             <Dialog.Content>
-              <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8 }}>
+              <Text variant="titleMedium" style={{ fontWeight: '700', marginBottom: 8, color: theme.colors.onSurface }}>
                 {result.imported} asset{result.imported !== 1 ? 's' : ''} imported
               </Text>
               {result.failed > 0 && (
@@ -402,11 +444,23 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
                 </Text>
               )}
             </Dialog.Content>
-            <Dialog.Actions>
-              <Button mode="contained" onPress={() => {
-                if (result && result.imported > 0) onImported(result.imported);
-                else handleDismiss();
-              }}>Done</Button>
+            <Dialog.Actions style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+              <BouncePressable
+                onPress={() => {
+                  if (result && result.imported > 0) onImported(result.imported);
+                  else handleDismiss();
+                }}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  borderRadius: theme.roundness,
+                  backgroundColor: theme.colors.primary,
+                }}
+              >
+                <Text variant="labelMedium" style={{ fontWeight: '600', color: theme.colors.onPrimary, fontSize: 13 }}>
+                  Done
+                </Text>
+              </BouncePressable>
             </Dialog.Actions>
           </>
         )}

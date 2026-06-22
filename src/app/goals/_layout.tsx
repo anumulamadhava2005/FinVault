@@ -14,7 +14,8 @@ export default function GoalsLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.onSurface,
-        headerTitleStyle: { fontWeight: '800' },
+        headerTitleStyle: { fontWeight: '700', fontSize: 18 },
+        contentStyle: { backgroundColor: theme.colors.background },
       }}
     >
       <Stack.Screen

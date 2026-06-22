@@ -29,8 +29,8 @@ const blank = { name: '', goal_type: 'retirement', target: '', target_date: '', 
 const GoalsScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
-  const progress = useData(() => goalsProgress(userId));
-  const assets = useData(() => all<Asset>('SELECT * FROM assets WHERE user_id = ? ORDER BY name', [userId]));
+  const progress = useData(() => goalsProgress(userId!));
+  const assets = useData(() => all<Asset>('SELECT * FROM assets WHERE user_id = ? ORDER BY name', [userId!]));
 
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ ...blank });
@@ -47,7 +47,7 @@ const GoalsScreen: React.FC = () => {
     const id = newId();
     insert('financial_goals', {
       id,
-      user_id: userId,
+      user_id: userId!,
       name: form.name.trim(),
       goal_type: form.goal_type,
       target_amount: target,
@@ -104,29 +104,29 @@ const GoalsScreen: React.FC = () => {
           <SectionCard><EmptyState icon="flag-checkered" title="No goals yet" message="Define a target and link assets that fund it." /></SectionCard>
         ) : (
           progress.goals.map((g) => (
-            <SectionCard key={g.id}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text variant="titleSmall" style={{ fontWeight: '800', flex: 1 }}>{g.name}</Text>
+            <SectionCard key={g.id} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <Text variant="titleSmall" style={{ fontWeight: '700', flex: 1 }}>{g.name}</Text>
                 <StatusChip label={g.status_label} tone={g.status_tone} icon={g.status_icon} />
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
                 <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, textTransform: 'uppercase' }}>Progress</Text>
                 <Text variant="labelMedium" style={{ fontWeight: '700' }}>{formatINR(g.current)} / {formatINR(g.target_amount)}</Text>
               </View>
-              <View style={{ marginTop: 4 }}>
+              <View style={{ marginTop: 8 }}>
                 <ProgressBar pct={g.pct} color={statusColor(g.status_tone)} markerPct={g.expected_pct} />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
                   <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>{g.pct}% complete</Text>
                   {g.status !== 'completed' && g.required_monthly > 0 ? (
-                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>Save ~{formatINR(g.required_monthly)}/mo to finish on time</Text>
+                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>Save ~{formatINR(g.required_monthly)}/mo</Text>
                   ) : null}
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
                 <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
                   Target {g.target_date || '—'} · {g.linked} linked asset{g.linked === 1 ? '' : 's'}
                 </Text>
-                <Button compact textColor={palette.danger} onPress={() => setConfirmId(g.id)}>Delete</Button>
+                <Button mode="text" compact textColor={palette.danger} onPress={() => setConfirmId(g.id)} style={{ margin: 0, padding: 0 }}>Delete</Button>
               </View>
             </SectionCard>
           ))
@@ -136,7 +136,7 @@ const GoalsScreen: React.FC = () => {
       <FAB icon="plus" label="Add Goal" style={{ position: 'absolute', right: 16, bottom: 16 }} onPress={() => setAddOpen(true)} />
 
       <Portal>
-        <Dialog visible={addOpen} onDismiss={() => setAddOpen(false)} style={{ maxHeight: '85%' }}>
+        <Dialog visible={addOpen} onDismiss={() => setAddOpen(false)} style={{ maxHeight: '85%', borderRadius: theme.roundness }}>
           <Dialog.Title>Add Goal</Dialog.Title>
           <Dialog.ScrollArea>
             <View style={{ paddingVertical: 12 }}>
@@ -176,7 +176,7 @@ const GoalsScreen: React.FC = () => {
           </Dialog.Actions>
         </Dialog>
 
-        <Dialog visible={!!confirmId} onDismiss={() => setConfirmId(null)}>
+        <Dialog visible={!!confirmId} onDismiss={() => setConfirmId(null)} style={{ borderRadius: theme.roundness }}>
           <Dialog.Title>Delete Goal</Dialog.Title>
           <Dialog.Content><Text>Delete this goal? This action cannot be undone.</Text></Dialog.Content>
           <Dialog.Actions>

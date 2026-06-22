@@ -14,7 +14,8 @@ export default function AssetsLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.onSurface,
-        headerTitleStyle: { fontWeight: '800' },
+        headerTitleStyle: { fontWeight: '700', fontSize: 18 },
+        contentStyle: { backgroundColor: theme.colors.background },
       }}
     >
       <Stack.Screen
@@ -34,6 +35,7 @@ export default function AssetsLayout() {
           ),
         }}
       />
+      <Stack.Screen name="add" options={{ title: 'Add Asset' }} />
       <Stack.Screen name="[id]" options={{ title: 'Asset Details' }} />
       <Stack.Screen name="[id]/edit" options={{ title: 'Edit Asset', presentation: 'modal' }} />
     </Stack>

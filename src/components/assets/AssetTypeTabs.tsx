@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView } from 'react-native';
 import { Chip } from 'react-native-paper';
 import type { AssetType } from '../../models/types';
+import BouncePressable from '../BouncePressable';
 
 interface AssetTypeTabsProps {
   assetTypes: AssetType[];
@@ -9,30 +10,51 @@ interface AssetTypeTabsProps {
   onSelect: (slug: string | null) => void;
 }
 
+const getShortName = (name: string): string => {
+  const map: Record<string, string> = {
+    'Mutual Funds': 'MF',
+    'Equity': 'Stocks',
+    'Fixed Deposit': 'FD',
+    'Gold': 'Gold',
+    'Public Provident Fund': 'PPF',
+    'Employee Provident Fund': 'EPF',
+    'Real Estate': 'Property',
+    'Insurance': 'Insurance',
+    'Bank Balance': 'Cash',
+  };
+  return map[name] ?? name;
+};
+
 const AssetTypeTabs: React.FC<AssetTypeTabsProps> = ({ assetTypes, activeSlug, onSelect }) => (
   <ScrollView
     horizontal
     showsHorizontalScrollIndicator={false}
-    contentContainerStyle={{ paddingVertical: 8, gap: 8, flexDirection: 'row' }}
+    contentContainerStyle={{ paddingHorizontal: 18, paddingVertical: 12, gap: 10, flexDirection: 'row' }}
   >
-    <Chip
-      selected={activeSlug === null}
-      onPress={() => onSelect(null)}
-      accessibilityLabel="Show all asset types"
-    >
-      All
-    </Chip>
-    {assetTypes.map((t) => (
+    <BouncePressable onPress={() => onSelect(null)}>
       <Chip
-        key={t.id}
-        selected={activeSlug === t.slug}
-        onPress={() => onSelect(t.slug)}
-        accessibilityLabel={`Filter by ${t.name}`}
+        selected={activeSlug === null}
+        accessibilityLabel="Show all asset types"
+        compact
+        pointerEvents="none"
       >
-        {t.name}
+        All
       </Chip>
+    </BouncePressable>
+    {assetTypes.map((t) => (
+      <BouncePressable key={t.id} onPress={() => onSelect(t.slug)}>
+        <Chip
+          selected={activeSlug === t.slug}
+          accessibilityLabel={`Filter by ${t.name}`}
+          compact
+          pointerEvents="none"
+        >
+          {getShortName(t.name)}
+        </Chip>
+      </BouncePressable>
     ))}
   </ScrollView>
 );
 
 export default AssetTypeTabs;
+

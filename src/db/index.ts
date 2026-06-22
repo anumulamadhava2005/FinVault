@@ -34,6 +34,9 @@ const COLUMN_MIGRATIONS = [
   'ALTER TABLE sip_schedules ADD COLUMN end_date TEXT',
   'ALTER TABLE sip_schedules ADD COLUMN linked_bank TEXT',
   'ALTER TABLE assets ADD COLUMN last_price_updated_at TEXT',
+  "ALTER TABLE user_preferences ADD COLUMN vault_lock_mode TEXT NOT NULL DEFAULT 'password'",
+  'ALTER TABLE expenses ADD COLUMN bill_uri TEXT',
+  'ALTER TABLE asset_images ADD COLUMN local_path TEXT',
 ];
 
 // Idempotent data fixes that run on every startup to correct existing databases.
@@ -50,8 +53,8 @@ const DATA_FIXES = [
   `UPDATE asset_types SET name = 'Gold' WHERE slug = 'physical_gold' AND name != 'Gold'`,
 ];
 
-/** Initialise schema + seed once. Returns the single user's id. */
-export const initDb = (): string => {
+/** Initialise schema + seed once. Returns the single user's id or null. */
+export const initDb = (): string | null => {
   const db = getDb();
   db.execSync(SCHEMA);
   for (const sql of COLUMN_MIGRATIONS) {
@@ -62,7 +65,7 @@ export const initDb = (): string => {
   }
   const existing = db.getFirstSync<{ id: string }>('SELECT id FROM users LIMIT 1');
   if (existing) return existing.id;
-  return seedDemoData(db);
+  return null;
 };
 
 // --- Thin query helpers -----------------------------------------------------

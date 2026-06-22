@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS asset_images (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   uri TEXT NOT NULL,
   label TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  local_path TEXT
 );
 
 CREATE TABLE IF NOT EXISTS expense_categories (
@@ -106,7 +107,8 @@ CREATE TABLE IF NOT EXISTS expenses (
   description TEXT NOT NULL DEFAULT '',
   expense_date TEXT NOT NULL,
   spent_by_id TEXT REFERENCES household_members(id) ON DELETE SET NULL,
-  notes TEXT
+  notes TEXT,
+  bill_uri TEXT
 );
 
 CREATE TABLE IF NOT EXISTS income (
