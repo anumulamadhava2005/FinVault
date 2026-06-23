@@ -48,9 +48,30 @@ export interface Asset {
   current_nav: number | null;
   price_per_unit: number | null;
   maturity_date: string | null;
+  maturity_amount: number | null; // paise (e.g. PPF/FD/SGB maturity value)
   guaranteed_return_pct: number | null;
   details_json: string | null;
   last_price_updated_at: string | null;
+  created_at: string;
+}
+
+export interface HistoryEvent {
+  id: string;
+  user_id: string;
+  category: 'asset' | 'loan' | 'insurance' | 'goal';
+  event_type:
+    | 'sold' | 'partial_sale' | 'matured' | 'premature_closure'
+    | 'loan_closed' | 'insurance_claim' | 'policy_closed'
+    | 'goal_completed' | 'goal_archived' | 'goal_cancelled';
+  ref_id: string | null;
+  name: string;
+  subtype: string | null;
+  event_date: string;
+  amount: number | null;
+  pnl: number | null;
+  status: string | null;
+  notes: string | null;
+  details_json: string | null;
   created_at: string;
 }
 

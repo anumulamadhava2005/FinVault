@@ -61,6 +61,7 @@ const AddAssetScreen: React.FC = () => {
       purchase_date: values.investment_date,
       investment_date: values.investment_date,
       maturity_date: values.maturity_date,
+      maturity_amount: values.maturity_amount,
       guaranteed_return_pct: values.guaranteed_return_pct,
       isin: values.isin,
       ticker: values.ticker,

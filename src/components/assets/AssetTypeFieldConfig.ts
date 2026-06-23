@@ -21,6 +21,7 @@ export interface AssetTypeConfig {
   showNav?: boolean;
   showPricePerUnit?: boolean;
   showMaturityDate?: boolean;
+  showMaturityAmount?: boolean;
   showGuaranteedReturn?: boolean;
   showQuantity?: boolean;
   extraFields?: FieldConfig[];
@@ -30,6 +31,7 @@ export interface AssetTypeConfig {
   pricePerUnitLabel?: string;
   navLabel?: string;
   guaranteedReturnLabel?: string;
+  maturityAmountLabel?: string;
   investedLabel?: string;
   currentValueLabel?: string;
   investmentDateLabel?: string;
@@ -184,10 +186,13 @@ export const ASSET_TYPE_CONFIGS: Record<string, AssetTypeConfig> = {
     label: 'PPF',
     icon: 'shield-account',
     showGuaranteedReturn: true,
+    showMaturityDate: true,
+    showMaturityAmount: true,
     showQuantity: false,
     assetNameLabel: 'Account / bank name',
     investedLabel: 'Total invested (₹)',
     guaranteedReturnLabel: 'Current interest rate (%)',
+    maturityAmountLabel: 'Maturity amount (₹)',
     investmentDateLabel: 'Account opening date',
     sipCheckboxLabel: 'Regular monthly contribution active',
     sipMonthlyLabel: 'Monthly contribution (₹)',

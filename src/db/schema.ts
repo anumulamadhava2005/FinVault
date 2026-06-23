@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS assets (
   current_nav REAL,
   price_per_unit REAL,
   maturity_date TEXT,
+  maturity_amount INTEGER,
   guaranteed_return_pct REAL,
   details_json TEXT,
   created_at TEXT NOT NULL
@@ -266,5 +267,22 @@ CREATE TABLE IF NOT EXISTS market_cache (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS history_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL,          -- asset | loan | insurance | goal
+  event_type TEXT NOT NULL,        -- sold | partial_sale | matured | premature_closure | loan_closed | insurance_claim | policy_closed | goal_completed | goal_archived | goal_cancelled
+  ref_id TEXT,                     -- original entity id (may be deleted)
+  name TEXT NOT NULL,
+  subtype TEXT,                    -- asset/loan/policy/goal type label
+  event_date TEXT NOT NULL,        -- ISO date of the event
+  amount INTEGER,                  -- final / settlement / proceeds amount (paise)
+  pnl INTEGER,                     -- profit/loss where applicable (paise)
+  status TEXT,                     -- display status label
+  notes TEXT,
+  details_json TEXT,
+  created_at TEXT NOT NULL
 );
 `;

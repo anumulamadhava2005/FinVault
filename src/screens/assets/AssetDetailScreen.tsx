@@ -10,6 +10,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -24,8 +25,9 @@ import SIPModal from '../../components/assets/SIPModal';
 import { useSIPConfig } from '../../hooks/assets/useSIPConfig';
 import { getTypeConfig } from '../../components/assets/AssetTypeFieldConfig';
 import { SIP_ELIGIBLE_TYPES } from '../../services/constants';
-import { formatINR, pct, assetPnl } from '../../utils/money';
-import { formatDisplayDate, nowISO } from '../../utils/date';
+import { sellAsset, prematureClosure, QUANTITY_SELL_SLUGS, MATURITY_SLUGS } from '../../services/lifecycle';
+import { formatINR, pct, assetPnl, rupeesToPaise } from '../../utils/money';
+import { formatDisplayDate, nowISO, todayISO } from '../../utils/date';
 import { calcCAGR } from '../../utils/cagr';
 import { palette } from '../../theme';
 
@@ -174,6 +176,13 @@ const AssetDetailScreen: React.FC = () => {
   const [goalDrafts, setGoalDrafts] = useState<GoalDraft[]>([]);
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
 
+  // ── Lifecycle (Sell / Premature closure) ──
+  const [lcMode, setLcMode] = useState<null | 'sell' | 'premature'>(null);
+  const [lcDatePicker, setLcDatePicker] = useState(false);
+  const blankLc = { date: todayISO(), qty: '', price: '', charges: '', saleValue: '', redemption: '', notes: '', toCash: true };
+  const [lc, setLc] = useState({ ...blankLc });
+  const setLcField = (k: keyof typeof lc, v: string | boolean) => setLc((f) => ({ ...f, [k]: v }));
+
   if (assetError) {
     return (
       <Screen>
@@ -203,6 +212,62 @@ const AssetDetailScreen: React.FC = () => {
   if (asset.details_json) {
     try { details = JSON.parse(asset.details_json); } catch { /* malformed json */ }
   }
+
+  // ── Lifecycle helpers (Sell / Premature closure) ─────────────────────────────
+  const isQuantitySell = QUANTITY_SELL_SLUGS.has(asset.slug);
+  const isMaturityType = MATURITY_SLUGS.has(asset.slug);
+
+  const openSell = () => {
+    setLc({
+      ...blankLc,
+      price: asset.price_per_unit ? String(asset.price_per_unit) : '',
+      saleValue: asset.current_value ? String(asset.current_value / 100) : '',
+    });
+    setLcMode('sell');
+  };
+  const openPremature = () => {
+    setLc({ ...blankLc, redemption: asset.current_value ? String(asset.current_value / 100) : '' });
+    setLcMode('premature');
+  };
+
+  const confirmLifecycle = () => {
+    const charges = rupeesToPaise(lc.charges || '0');
+    if (lcMode === 'premature') {
+      const redemption = rupeesToPaise(lc.redemption || '0');
+      if (redemption <= 0) { Alert.alert('Enter redemption amount', 'Redemption amount must be greater than 0.'); return; }
+      prematureClosure(userId!, asset, { closureDate: lc.date, redemptionAmount: redemption, notes: lc.notes, toCash: lc.toCash });
+      setLcMode(null); refresh(); router.back();
+      return;
+    }
+    // Sell
+    if (isQuantitySell) {
+      const qty = parseFloat(lc.qty);
+      const price = rupeesToPaise(lc.price || '0');
+      if (!qty || qty <= 0) { Alert.alert('Invalid quantity', 'Quantity to sell must be greater than 0.'); return; }
+      if (qty > asset.quantity) { Alert.alert('Too many units', `You only have ${asset.quantity} units available.`); return; }
+      if (price <= 0) { Alert.alert('Invalid price', 'Sale price per unit must be greater than 0.'); return; }
+      const full = qty >= asset.quantity;
+      sellAsset(userId!, asset, { saleDate: lc.date, notes: lc.notes, toCash: lc.toCash, charges, qtyToSell: qty, pricePerUnit: price });
+      setLcMode(null); refresh();
+      if (full) router.back();
+    } else {
+      const saleValue = rupeesToPaise(lc.saleValue || '0');
+      if (saleValue <= 0) { Alert.alert('Invalid sale value', 'Sale value must be greater than 0.'); return; }
+      sellAsset(userId!, asset, { saleDate: lc.date, notes: lc.notes, toCash: lc.toCash, charges, saleValue });
+      setLcMode(null); refresh(); router.back();
+    }
+  };
+
+  // Live preview for the lifecycle dialog.
+  const lcQty = parseFloat(lc.qty) || 0;
+  const lcCharges = rupeesToPaise(lc.charges || '0');
+  const lcSaleValue = lcMode === 'sell'
+    ? (isQuantitySell ? Math.round(lcQty * rupeesToPaise(lc.price || '0')) : rupeesToPaise(lc.saleValue || '0'))
+    : 0;
+  const lcCostBasis = isQuantitySell && asset.quantity ? Math.round((asset.invested_amount * lcQty) / asset.quantity) : asset.invested_amount;
+  const lcRedemption = rupeesToPaise(lc.redemption || '0');
+  const lcProceeds = lcMode === 'premature' ? lcRedemption : lcSaleValue - lcCharges;
+  const lcPnl = lcMode === 'premature' ? lcRedemption - asset.invested_amount : lcSaleValue - lcCostBasis - lcCharges;
 
   // ── Attachment helpers ───────────────────────────────────────────────────────
 
@@ -482,7 +547,7 @@ const AssetDetailScreen: React.FC = () => {
           {(asset.maturity_date || asset.guaranteed_return_pct != null) && (
             <Row style={{ marginTop: 12 }}>
               {asset.maturity_date ? (
-                <Kpi label="Maturity" value={formatDisplayDate(asset.maturity_date)} />
+                <Kpi label="Maturity Date" value={formatDisplayDate(asset.maturity_date)} />
               ) : null}
               {asset.guaranteed_return_pct != null ? (
                 <Kpi
@@ -492,6 +557,12 @@ const AssetDetailScreen: React.FC = () => {
               ) : null}
             </Row>
           )}
+
+          {asset.maturity_amount != null ? (
+            <Row style={{ marginTop: 12 }}>
+              <Kpi label={cfg.maturityAmountLabel ?? 'Maturity Amount'} value={formatINR(asset.maturity_amount)} />
+            </Row>
+          ) : null}
 
           {(asset.price_per_unit != null || asset.current_nav != null) && (
             <Row style={{ marginTop: 12 }}>
@@ -701,6 +772,33 @@ const AssetDetailScreen: React.FC = () => {
           </SectionCard>
         ) : null}
 
+        {/* Lifecycle actions */}
+        <SectionCard title="Manage Asset" style={{ marginBottom: 12 }}>
+          {isMaturityType ? (
+            <>
+              {asset.maturity_date ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <MaterialCommunityIcons name="information-outline" size={16} color={theme.colors.onSurfaceVariant} />
+                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, flex: 1 }}>
+                    Auto-matures on {formatDisplayDate(asset.maturity_date)} — proceeds sweep to your Cash portfolio automatically.
+                  </Text>
+                </View>
+              ) : null}
+              <Button mode="contained" icon="cash-fast" onPress={openPremature} style={{ borderRadius: theme.roundness }}>
+                Premature Closure
+              </Button>
+            </>
+          ) : (asset.slug === 'savings' && asset.name === 'Cash & Money') ? (
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+              This is your Cash & Money portfolio — sale, maturity and claim proceeds are credited here.
+            </Text>
+          ) : (
+            <Button mode="contained" icon="cash-minus" onPress={openSell} style={{ borderRadius: theme.roundness }}>
+              Sell Asset
+            </Button>
+          )}
+        </SectionCard>
+
         {/* Actions */}
         <SectionCard style={{ marginBottom: 24 }}>
           <Row gap={8}>
@@ -765,6 +863,78 @@ const AssetDetailScreen: React.FC = () => {
           </Pressable>
         </View>
       </Modal>
+
+      {/* Sell / Premature-closure dialog */}
+      <Portal>
+        <Dialog visible={lcMode !== null} onDismiss={() => setLcMode(null)} style={{ maxHeight: '85%', borderRadius: theme.roundness }}>
+          <Dialog.Title>{lcMode === 'premature' ? 'Premature Closure' : 'Sell Asset'}</Dialog.Title>
+          <Dialog.ScrollArea>
+            <ScrollView contentContainerStyle={{ paddingVertical: 8, gap: 8 }}>
+              {/* Date */}
+              <Button mode="outlined" icon="calendar" onPress={() => setLcDatePicker(true)} style={{ borderRadius: theme.roundness }}>
+                {lcMode === 'premature' ? `Closure date: ${lc.date}` : `Sale date: ${lc.date}`}
+              </Button>
+              {lcDatePicker && (
+                <DateTimePicker
+                  value={lc.date ? new Date(lc.date + 'T00:00:00') : new Date()}
+                  mode="date"
+                  onChange={(_e, d) => { setLcDatePicker(false); if (d) setLcField('date', d.toISOString().slice(0, 10)); }}
+                />
+              )}
+
+              {lcMode === 'premature' ? (
+                <TextInput label="Redemption Amount (₹) *" keyboardType="numeric" value={lc.redemption} onChangeText={(v) => setLcField('redemption', v)} mode="outlined" dense />
+              ) : isQuantitySell ? (
+                <>
+                  <TextInput label="Available Quantity" value={String(asset.quantity)} editable={false} mode="outlined" dense style={{ backgroundColor: theme.colors.surfaceVariant }} />
+                  <TextInput label="Quantity to Sell *" keyboardType="numeric" value={lc.qty} onChangeText={(v) => setLcField('qty', v)} mode="outlined" dense />
+                  <TextInput label="Sale Price Per Unit (₹) *" keyboardType="numeric" value={lc.price} onChangeText={(v) => setLcField('price', v)} mode="outlined" dense />
+                  <TextInput label="Transaction Charges (₹)" keyboardType="numeric" value={lc.charges} onChangeText={(v) => setLcField('charges', v)} mode="outlined" dense />
+                </>
+              ) : (
+                <>
+                  <TextInput label="Sale Value (₹) *" keyboardType="numeric" value={lc.saleValue} onChangeText={(v) => setLcField('saleValue', v)} mode="outlined" dense />
+                  <TextInput label="Transaction Charges (₹)" keyboardType="numeric" value={lc.charges} onChangeText={(v) => setLcField('charges', v)} mode="outlined" dense />
+                </>
+              )}
+
+              <TextInput label="Notes" value={lc.notes} onChangeText={(v) => setLcField('notes', v)} mode="outlined" dense multiline />
+
+              {/* Live preview */}
+              <View style={{ backgroundColor: theme.colors.surfaceVariant, borderRadius: theme.roundness, padding: 12, marginTop: 4, gap: 4 }}>
+                {lcMode === 'sell' && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Sale Value</Text>
+                    <Text variant="bodySmall" style={{ fontWeight: '700' }}>{formatINR(lcSaleValue)}</Text>
+                  </View>
+                )}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Proceeds to credit</Text>
+                  <Text variant="bodySmall" style={{ fontWeight: '700' }}>{formatINR(lcProceeds)}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Profit / Loss</Text>
+                  <Text variant="bodySmall" style={{ fontWeight: '700', color: lcPnl >= 0 ? palette.good : palette.danger }}>
+                    {lcPnl >= 0 ? '+' : ''}{formatINR(lcPnl)}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Transfer to cash */}
+              <Pressable onPress={() => setLcField('toCash', !lc.toCash)} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <Checkbox status={lc.toCash ? 'checked' : 'unchecked'} onPress={() => setLcField('toCash', !lc.toCash)} />
+                <Text variant="bodyMedium" style={{ flex: 1 }}>Transfer proceeds to Cash / Money portfolio</Text>
+              </Pressable>
+            </ScrollView>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button onPress={() => setLcMode(null)}>Cancel</Button>
+            <Button mode="contained" onPress={confirmLifecycle}>
+              {lcMode === 'premature' ? 'Close Asset' : 'Confirm Sale'}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       {/* Goal Link Modal */}
       <Portal>

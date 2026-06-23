@@ -5,7 +5,7 @@
  * parses out the total / date / merchant / line-items, and shows an intuitive,
  * fully-editable review card before saving the expense (with the bill attached).
  *
- * OCR module: @react-native-ml-kit/text-recognition (on-device, no API key).
+ * OCR module: @dariyd/react-native-text-recognition (on-device, no API key).
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';

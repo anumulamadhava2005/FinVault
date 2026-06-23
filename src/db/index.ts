@@ -38,6 +38,7 @@ const COLUMN_MIGRATIONS = [
   'ALTER TABLE expenses ADD COLUMN bill_uri TEXT',
   'ALTER TABLE asset_images ADD COLUMN local_path TEXT',
   'ALTER TABLE loans ADD COLUMN details_json TEXT',
+  'ALTER TABLE assets ADD COLUMN maturity_amount INTEGER',
 ];
 
 // Idempotent data fixes that run on every startup to correct existing databases.

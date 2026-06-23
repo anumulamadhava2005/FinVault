@@ -26,6 +26,7 @@ import {
 import { generateAllNotifications } from '../services/notificationService';
 import { captureNetWorthSnapshot } from '../services/wealthRecap';
 import { refreshMarketData } from '../services/marketFeeds';
+import { runLifecycleSweeps } from '../services/lifecycle';
 import { chartColors, palette, statusColor } from '../theme';
 import { addMonths, localISODate, parseISO } from '../utils/date';
 import { formatINR, formatINRCompact, scoreColor } from '../utils/money';
@@ -99,6 +100,13 @@ const DashboardScreen: React.FC = () => {
   useEffect(() => {
     refreshMarketData().catch(() => { /* offline — cached values are used */ });
   }, []);
+
+  // Process automatic lifecycle events (maturities, loan closures, goal
+  // completions) on load; refresh once if anything moved to history.
+  useEffect(() => {
+    try { if (runLifecycleSweeps(userId!)) refresh(); } catch { /* non-critical */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   useLayoutEffect(() => {
     navigation.setOptions({

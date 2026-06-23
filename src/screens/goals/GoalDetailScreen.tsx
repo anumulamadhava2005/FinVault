@@ -8,6 +8,7 @@ import { useDataSafe } from '../../hooks/useData';
 import { all, remove } from '../../db';
 import type { Asset } from '../../models/types';
 import { goalsProgress } from '../../services/finance';
+import { archiveGoal } from '../../services/lifecycle';
 import { GOAL_TYPE_LABELS } from '../../services/constants';
 import { Screen, SectionCard, Kpi, Row, StatusChip, ProgressBar, EmptyState } from '../../components/ui';
 import { palette, statusColor } from '../../theme';
@@ -21,6 +22,7 @@ const GoalDetailScreen: React.FC = () => {
   const router = useRouter();
   const theme = useTheme();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   const { data: goal, error } = useDataSafe(() => {
     const prog = goalsProgress(userId!);
@@ -51,6 +53,18 @@ const GoalDetailScreen: React.FC = () => {
       router.back();
     } catch {
       Alert.alert('Error', 'Failed to delete goal. Please try again.');
+    }
+  };
+
+  const handleArchive = (cancelled: boolean) => {
+    if (!goal) return;
+    try {
+      archiveGoal(userId!, { id: goal.id, name: goal.name, goal_type: goal.goal_type, target_amount: goal.target_amount }, { cancelled });
+      setConfirmArchive(false);
+      refresh();
+      router.back();
+    } catch {
+      Alert.alert('Error', 'Failed to archive goal. Please try again.');
     }
   };
 
@@ -193,6 +207,14 @@ const GoalDetailScreen: React.FC = () => {
               Delete
             </Button>
           </Row>
+          <Button
+            mode="text"
+            icon="archive-outline"
+            style={{ marginTop: 8, borderRadius: theme.roundness }}
+            onPress={() => setConfirmArchive(true)}
+          >
+            Archive to History
+          </Button>
         </SectionCard>
       </Screen>
 
@@ -205,6 +227,18 @@ const GoalDetailScreen: React.FC = () => {
           <Dialog.Actions>
             <Button onPress={() => setConfirmDelete(false)}>Cancel</Button>
             <Button textColor={palette.danger} onPress={handleDelete}>Delete</Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog visible={confirmArchive} onDismiss={() => setConfirmArchive(false)} style={{ borderRadius: theme.roundness }}>
+          <Dialog.Title>Archive Goal</Dialog.Title>
+          <Dialog.Content>
+            <Text>Move "{goal.name}" to History? It will no longer appear in active goals but stays viewable in the History tab.</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setConfirmArchive(false)}>Cancel</Button>
+            <Button onPress={() => handleArchive(true)}>Cancel Goal</Button>
+            <Button mode="contained" onPress={() => handleArchive(false)}>Archive</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

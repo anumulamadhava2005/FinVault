@@ -21,6 +21,7 @@ export interface AssetFormValues {
   quantity: number;
   investment_date: string | null;
   maturity_date: string | null;
+  maturity_amount: number | null;
   guaranteed_return_pct: number | null;
   isin: string | null;
   ticker: string | null;
@@ -40,6 +41,7 @@ const BLANK: AssetFormValues = {
   quantity: 0,
   investment_date: null,
   maturity_date: null,
+  maturity_amount: null,
   guaranteed_return_pct: null,
   isin: null,
   ticker: null,
@@ -59,6 +61,7 @@ export const assetToFormValues = (a: Asset): AssetFormValues => ({
   quantity: a.quantity,
   investment_date: a.investment_date ?? a.purchase_date,
   maturity_date: a.maturity_date,
+  maturity_amount: a.maturity_amount,
   guaranteed_return_pct: a.guaranteed_return_pct,
   isin: a.isin,
   ticker: a.ticker,
@@ -130,6 +133,7 @@ const AssetForm: React.FC<AssetFormProps> = ({
   const [investedAmountText, setInvestedAmountText] = useState(form.invested_amount ? String(form.invested_amount / 100) : '');
   const [currentValueText, setCurrentValueText] = useState(form.current_value ? String(form.current_value / 100) : '');
   const [sipMonthlyAmountText, setSipMonthlyAmountText] = useState(form.sip_monthly_amount ? String(form.sip_monthly_amount / 100) : '');
+  const [maturityAmountText, setMaturityAmountText] = useState(form.maturity_amount ? String(form.maturity_amount / 100) : '');
 
   // Synchronise state when initial values update
   useEffect(() => {
@@ -141,6 +145,7 @@ const AssetForm: React.FC<AssetFormProps> = ({
     setInvestedAmountText(nextForm.invested_amount ? String(nextForm.invested_amount / 100) : '');
     setCurrentValueText(nextForm.current_value ? String(nextForm.current_value / 100) : '');
     setSipMonthlyAmountText(nextForm.sip_monthly_amount ? String(nextForm.sip_monthly_amount / 100) : '');
+    setMaturityAmountText(nextForm.maturity_amount ? String(nextForm.maturity_amount / 100) : '');
     try {
       setDetails(initial?.details_json ? JSON.parse(initial.details_json) : {});
     } catch {
@@ -337,6 +342,11 @@ const AssetForm: React.FC<AssetFormProps> = ({
     setSipMonthlyAmountText(v);
     const amt = rupeesToPaise(v || '0');
     set('sip_monthly_amount', amt);
+  };
+
+  const handleMaturityAmountChange = (v: string) => {
+    setMaturityAmountText(v);
+    set('maturity_amount', v.trim() ? rupeesToPaise(v) : null);
   };
 
   const validate = (): boolean => {
@@ -733,6 +743,24 @@ const AssetForm: React.FC<AssetFormProps> = ({
           error={errors.maturity_date}
           clearable
         />
+      )}
+
+      {/* Maturity amount (e.g. PPF) */}
+      {cfg.showMaturityAmount && (
+        <View>
+          <TextInput
+            label={cfg.maturityAmountLabel ?? 'Maturity amount (₹)'}
+            keyboardType="numeric"
+            value={maturityAmountText}
+            onChangeText={handleMaturityAmountChange}
+            mode="outlined"
+            dense
+            style={{ backgroundColor: theme.colors.surface }}
+          />
+          <HelperText type="info" style={{ marginTop: -2, paddingHorizontal: 4 }}>
+            Auto-credited to your Cash portfolio when this asset matures.
+          </HelperText>
+        </View>
       )}
 
       {/* SIP section */}

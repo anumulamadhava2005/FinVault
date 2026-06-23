@@ -53,6 +53,7 @@ const CustomDrawer = (props: any) => {
     { section: 'FINANCES', route: 'loans', label: 'Loans', icon: 'bank' },
     { section: 'FINANCES', route: 'goals', label: 'Goals', icon: 'flag-checkered' },
     { section: 'FINANCES', route: 'recap', label: 'Wealth Recap', icon: 'calendar-star' },
+    { section: 'FINANCES', route: 'history', label: 'History', icon: 'history' },
     { section: 'FINANCES', route: 'retirement', label: 'Retirement', icon: 'island' },
     { section: 'FINANCES', route: 'reports', label: 'Reports', icon: 'file-chart' },
     
@@ -244,6 +245,7 @@ const CustomDrawer = (props: any) => {
           {renderMenuItem('loans', 'Loans', 'bank')}
           {renderMenuItem('goals', 'Goals', 'flag-checkered')}
           {renderMenuItem('recap', 'Wealth Recap', 'calendar-star')}
+          {renderMenuItem('history', 'History', 'history')}
           {renderMenuItem('retirement', 'Retirement', 'island')}
           {renderMenuItem('reports', 'Reports', 'file-chart')}
 
@@ -1050,6 +1052,7 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="vault" options={{ title: 'Vault', drawerIcon: drawerIcon('lock') }} />
         <Drawer.Screen name="reports" options={{ title: 'Reports', drawerIcon: drawerIcon('file-chart') }} />
         <Drawer.Screen name="recap" options={{ title: 'Wealth Recap', drawerIcon: drawerIcon('calendar-star') }} />
+        <Drawer.Screen name="history" options={{ title: 'History', drawerIcon: drawerIcon('history') }} />
         <Drawer.Screen name="retirement" options={{ title: 'Retirement', drawerIcon: drawerIcon('island') }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings', drawerIcon: drawerIcon('cog') }} />
       </Drawer>

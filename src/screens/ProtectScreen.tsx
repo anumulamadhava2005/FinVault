@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useLayoutEffect } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, Pressable } from 'react-native';
 import { useNavigation } from 'expo-router';
 import {
   Button,
+  Checkbox,
   Dialog,
   FAB,
   IconButton,
@@ -33,11 +34,12 @@ import { all, insert, newId, remove, run } from '../db';
 import type { InsurancePolicy } from '../models/types';
 import { annualPremium, policyStatus, protectSummary, financialHealth } from '../services/finance';
 import { generateInsuranceNotifications } from '../services/notificationService';
+import { recordInsuranceClaim, closePolicy } from '../services/lifecycle';
 import { POLICY_TYPES, POLICY_TYPE_LABELS, titleCase } from '../services/constants';
 import { Screen, SectionCard, StatusChip, ProgressBar, LineItem, EmptyState } from '../components/ui';
 import { palette } from '../theme';
 import { formatINR, formatINRCompact, rupeesToPaise, pct } from '../utils/money';
-import { nowISO } from '../utils/date';
+import { nowISO, todayISO } from '../utils/date';
 
 const FREQS = ['monthly', 'quarterly', 'half-yearly', 'yearly', 'one-time'];
 const STATUS_TONE: Record<string, 'good' | 'warn' | 'bad'> = {
@@ -105,6 +107,37 @@ const ProtectScreen: React.FC = () => {
   const [form, setForm] = useState({ ...blank });
   // Attachments collected while adding a new policy (persisted after insert).
   const [policyAttachments, setPolicyAttachments] = useState<PickedAttachment[]>([]);
+
+  // Claim / Close lifecycle actions.
+  const [policyAction, setPolicyAction] = useState<null | { mode: 'claim' | 'close'; policy: InsurancePolicy }>(null);
+  const [paForm, setPaForm] = useState({ date: todayISO(), amount: '', surrender: '', notes: '', toCash: true });
+  const [paDatePicker, setPaDatePicker] = useState(false);
+  const paField = (k: keyof typeof paForm, v: string | boolean) => setPaForm((f) => ({ ...f, [k]: v }));
+
+  const openClaim = (policy: InsurancePolicy) => {
+    setPaForm({ date: todayISO(), amount: '', surrender: '', notes: '', toCash: true });
+    setPolicyAction({ mode: 'claim', policy });
+  };
+  const openClose = (policy: InsurancePolicy) => {
+    setPaForm({ date: todayISO(), amount: '', surrender: '', notes: '', toCash: true });
+    setPolicyAction({ mode: 'close', policy });
+  };
+  const confirmPolicyAction = () => {
+    if (!policyAction) return;
+    const { mode, policy } = policyAction;
+    if (mode === 'claim') {
+      const amount = rupeesToPaise(paForm.amount || '0');
+      if (amount <= 0) { Alert.alert('Enter claim amount', 'Claim amount must be greater than 0.'); return; }
+      recordInsuranceClaim(userId!, policy, { claimDate: paForm.date, amount, notes: paForm.notes, toCash: paForm.toCash });
+      setSnackMsg('Claim recorded');
+    } else {
+      const surrender = rupeesToPaise(paForm.surrender || '0');
+      closePolicy(userId!, policy, { closureDate: paForm.date, surrenderValue: surrender, notes: paForm.notes, toCash: paForm.toCash });
+      setSnackMsg('Policy closed and moved to history');
+    }
+    setPolicyAction(null);
+    refresh();
+  };
   const [typeMenu, setTypeMenu] = useState(false);
   const [freqMenu, setFreqMenu] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -1040,6 +1073,16 @@ const ProtectScreen: React.FC = () => {
                           ownerId={p.id}
                         />
                       </View>
+
+                      {/* Lifecycle actions */}
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+                        <Button mode="contained" icon="cash-plus" compact onPress={() => openClaim(p)} style={{ flex: 1, borderRadius: theme.roundness }}>
+                          Claim Insurance
+                        </Button>
+                        <Button mode="outlined" icon="close-circle-outline" compact textColor={palette.danger} onPress={() => openClose(p)} style={{ flex: 1, borderRadius: theme.roundness }}>
+                          Close Policy
+                        </Button>
+                      </View>
                     </View>
                   )}
 
@@ -1392,6 +1435,53 @@ const ProtectScreen: React.FC = () => {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setImportResult(null)}>Close</Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* Claim / Close policy dialog */}
+        <Dialog visible={policyAction !== null} onDismiss={() => setPolicyAction(null)} style={{ borderRadius: theme.roundness }}>
+          <Dialog.Title>{policyAction?.mode === 'close' ? 'Close Policy' : 'Claim Insurance'}</Dialog.Title>
+          <Dialog.Content>
+            {policyAction ? (
+              <View style={{ gap: 8 }}>
+                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                  {policyAction.policy.policy_name}
+                </Text>
+                <Button mode="outlined" icon="calendar" onPress={() => setPaDatePicker(true)} style={{ borderRadius: theme.roundness }}>
+                  {policyAction.mode === 'close' ? `Closure date: ${paForm.date}` : `Claim date: ${paForm.date}`}
+                </Button>
+                {paDatePicker && (
+                  <DateTimePicker
+                    value={paForm.date ? new Date(paForm.date + 'T00:00:00') : new Date()}
+                    mode="date"
+                    onChange={(_e, d) => { setPaDatePicker(false); if (d) paField('date', d.toISOString().slice(0, 10)); }}
+                  />
+                )}
+                {policyAction.mode === 'claim' ? (
+                  <TextInput label="Claim Amount (₹) *" keyboardType="numeric" value={paForm.amount} onChangeText={(v) => paField('amount', v)} mode="outlined" dense />
+                ) : (
+                  <TextInput label="Surrender Value (₹) — optional" keyboardType="numeric" value={paForm.surrender} onChangeText={(v) => paField('surrender', v)} mode="outlined" dense />
+                )}
+                <TextInput label="Notes" value={paForm.notes} onChangeText={(v) => paField('notes', v)} mode="outlined" dense multiline />
+                <Pressable onPress={() => paField('toCash', !paForm.toCash)} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Checkbox status={paForm.toCash ? 'checked' : 'unchecked'} onPress={() => paField('toCash', !paForm.toCash)} />
+                  <Text variant="bodyMedium" style={{ flex: 1 }}>
+                    Transfer {policyAction.mode === 'close' ? 'surrender value' : 'proceeds'} to Cash / Money portfolio
+                  </Text>
+                </Pressable>
+                {policyAction.mode === 'claim' && (
+                  <HelperText type="info" style={{ paddingHorizontal: 0 }}>
+                    The policy stays active after a claim — close it separately if you wish.
+                  </HelperText>
+                )}
+              </View>
+            ) : null}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setPolicyAction(null)}>Cancel</Button>
+            <Button mode="contained" onPress={confirmPolicyAction}>
+              {policyAction?.mode === 'close' ? 'Close Policy' : 'Record Claim'}
+            </Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
