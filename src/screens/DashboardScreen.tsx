@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import BouncePressable from '../components/BouncePressable';
 import NotificationBell from '../components/NotificationBell';
+import BillScanModal from '../components/BillScanModal';
 import { DistributionPie, TrendLine } from '../components/charts';
 import { Kpi, LineItem, ProgressBar, Row, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
@@ -99,6 +100,9 @@ const DashboardScreen: React.FC = () => {
       ),
     });
   }, [navigation, theme]);
+
+  // Bill-scan (Log Expense) modal
+  const [scanOpen, setScanOpen] = useState(false);
 
   // Collapsible states
   const [expIncExp, setExpIncExp] = useState(false);
@@ -712,7 +716,7 @@ const DashboardScreen: React.FC = () => {
       >
         <View style={{ flex: 1 }}>
           <BouncePressable
-            onPress={() => router.push('/expenses' as any)}
+            onPress={() => setScanOpen(true)}
             style={{
               backgroundColor: theme.colors.background,
               borderWidth: 1,
@@ -726,9 +730,9 @@ const DashboardScreen: React.FC = () => {
               gap: 8,
             }}
           >
-            <MaterialCommunityIcons name="receipt" size={16} color={palette.danger} />
+            <MaterialCommunityIcons name="camera-outline" size={16} color={palette.danger} />
             <Text variant="labelMedium" style={{ fontWeight: '700', color: theme.colors.onSurface, fontSize: 13 }} numberOfLines={1}>
-              Log Expense
+              Scan Bill
             </Text>
           </BouncePressable>
         </View>
@@ -754,6 +758,8 @@ const DashboardScreen: React.FC = () => {
           </BouncePressable>
         </View>
       </Animated.View>
+
+      <BillScanModal visible={scanOpen} onClose={() => setScanOpen(false)} />
     </View>
   );
 };
