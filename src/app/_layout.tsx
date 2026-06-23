@@ -1101,6 +1101,8 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="reports" options={{ title: 'Reports', drawerIcon: drawerIcon('file-chart') }} />
         <Drawer.Screen name="recap" options={{ title: 'Wealth Recap', drawerIcon: drawerIcon('calendar-star') }} />
         <Drawer.Screen name="history" options={{ title: 'History', drawerIcon: drawerIcon('history') }} />
+        <Drawer.Screen name="daily-movement" options={{ title: 'Daily Movement', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="news-impact" options={{ title: 'Impact Analysis', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="retirement" options={{ title: 'Retirement', drawerIcon: drawerIcon('island') }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings', drawerIcon: drawerIcon('cog') }} />
       </Drawer>

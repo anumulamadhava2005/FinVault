@@ -12,7 +12,7 @@
  * Network results are cached in SQLite so the rest of the app can read them
  * synchronously and so the UI still has data when offline.
  */
-import { first, run } from '../db';
+import { all, first, run } from '../db';
 import { nowISO } from '../utils/date';
 import { fetchYahooChart, YAHOO_UA } from '../utils/yahoo';
 
@@ -115,6 +115,8 @@ export interface FeedItem {
   source: string;
   published: string | null;
   summary: string;
+  /** Names of the user's holdings this story was fetched for (portfolio-targeted feed). */
+  holdings?: string[];
 }
 
 const RSS_FEEDS: { url: string; source: string }[] = [
@@ -220,4 +222,134 @@ export const getCachedFeed = (): FeedItem[] => {
   } catch {
     return [];
   }
+};
+
+// ─── Portfolio-targeted news (Google News RSS search) ────────────────────────
+
+const GOOGLE_NEWS_SEARCH = 'https://news.google.com/rss/search';
+const PORTFOLIO_SLUGS = ['equity', 'mutual_fund', 'digital_gold', 'physical_gold', 'sgb'];
+
+/** Strip corporate suffixes so "Reliance Industries Ltd" → "Reliance Industries". */
+const cleanCompany = (name: string): string =>
+  name
+    .replace(/\b(ltd|limited|pvt|private|inc|corp|company|co)\b\.?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+/** Build de-duplicated search queries from the user's market holdings. */
+const buildPortfolioQueries = (userId: string): { query: string; holdings: string[] }[] => {
+  const rows = all<{ name: string; ticker: string | null; slug: string }>(
+    `SELECT a.name, a.ticker, t.slug AS slug FROM assets a
+     JOIN asset_types t ON t.id = a.asset_type_id
+     WHERE a.user_id = ? AND t.slug IN (${PORTFOLIO_SLUGS.map(() => '?').join(',')})
+     ORDER BY a.current_value DESC`,
+    [userId, ...PORTFOLIO_SLUGS],
+  );
+  const map = new Map<string, { query: string; holdings: Set<string> }>();
+  const add = (query: string, name: string) => {
+    if (!query.trim()) return;
+    const key = query.toLowerCase();
+    if (!map.has(key)) map.set(key, { query, holdings: new Set() });
+    map.get(key)!.holdings.add(name);
+  };
+  for (const r of rows) {
+    if (r.slug === 'equity') add(`${cleanCompany(r.name)} share price`, r.name);
+    else if (r.slug === 'mutual_fund') add(`${cleanCompany(r.name)} fund`, r.name);
+    else add('gold price india', r.name); // digital/physical gold + SGB share one query
+  }
+  // Cap the number of network calls; holdings are value-sorted so the biggest win.
+  return [...map.values()].slice(0, 8).map((v) => ({ query: v.query, holdings: [...v.holdings] }));
+};
+
+/** Parse a Google News RSS search result, cleaning the "Title - Publisher" form. */
+const parseGoogleNews = (xml: string, holdings: string[]): FeedItem[] => {
+  const items: FeedItem[] = [];
+  const matches = xml.match(/<item[\s\S]*?<\/item>/gi) ?? [];
+  for (const block of matches) {
+    let title = tag(block, 'title');
+    if (!title) continue;
+    const link = tag(block, 'link');
+    const pub = tag(block, 'pubDate');
+    let published: string | null = null;
+    const d = pub ? new Date(pub) : null;
+    if (d && !isNaN(d.getTime())) published = d.toISOString();
+
+    let source = tag(block, 'source') || '';
+    // Google News appends " - Publisher" to titles; pull it off for a clean title.
+    const dash = title.lastIndexOf(' - ');
+    if (dash > 0) {
+      const pubName = title.slice(dash + 3).trim();
+      if (!source) source = pubName;
+      title = title.slice(0, dash).trim();
+    }
+    if (!source) source = 'Google News';
+
+    items.push({
+      id: link || `${source}-${title.slice(0, 40)}`,
+      title,
+      link,
+      source,
+      published,
+      summary: tag(block, 'description').slice(0, 200),
+      holdings,
+    });
+  }
+  return items;
+};
+
+/**
+ * Fetch news that actually mentions the user's holdings, via per-holding Google
+ * News searches. Each item is tagged with the holding(s) it relates to. Falls
+ * back to the generic market feed when the user has no market holdings, and to
+ * the cache when offline.
+ */
+export const fetchPortfolioNews = async (userId: string): Promise<FeedItem[]> => {
+  const queries = buildPortfolioQueries(userId);
+  if (!queries.length) return fetchWealthFeed(); // no holdings → broad market news
+
+  const results = await Promise.all(
+    queries.map(async ({ query, holdings }) => {
+      try {
+        const url = `${GOOGLE_NEWS_SEARCH}?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
+        const res = await fetch(url, {
+          headers: { 'User-Agent': YAHOO_UA, Accept: 'application/rss+xml, application/xml, text/xml' },
+        });
+        if (!res.ok) return [];
+        const xml = await res.text();
+        return parseGoogleNews(xml, holdings).slice(0, 6); // freshest few per holding
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  // Merge, de-dupe by title (merging holding tags), sort newest-first.
+  const byKey = new Map<string, FeedItem>();
+  for (const list of results) {
+    for (const it of list) {
+      const key = it.title.toLowerCase().slice(0, 60);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.holdings = [...new Set([...(existing.holdings ?? []), ...(it.holdings ?? [])])];
+      } else {
+        byKey.set(key, it);
+      }
+    }
+  }
+  const merged = [...byKey.values()].sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''));
+  const top = merged.slice(0, 40);
+
+  if (top.length) {
+    try {
+      run('INSERT OR REPLACE INTO market_cache (key, value, updated_at) VALUES (?, ?, ?)', [
+        'feed',
+        JSON.stringify(top),
+        nowISO(),
+      ]);
+    } catch { /* best-effort */ }
+    return top;
+  }
+  // Targeted search returned nothing (offline / rate-limited) — use cache, then generic.
+  const cached = getCachedFeed();
+  return cached.length ? cached : fetchWealthFeed();
 };

@@ -261,6 +261,79 @@ export const todayMovers = (userId: string) => {
   };
 };
 
+// ─── Daily movement (1D return) ──────────────────────────────────────────────
+
+export interface DailyHolding {
+  id: string;
+  name: string;
+  type_name: string;
+  slug: string;
+  quantity: number;
+  current: number; // paise
+  change: number;  // paise today
+  pct: number;     // % today
+}
+
+export interface DailyMovementResult {
+  as_of: string;        // ISO datetime of the latest live quote (or now)
+  total_value: number;  // paise — sum of market-holding current values
+  day_change: number;   // paise
+  day_change_pct: number;
+  count: number;
+  have_data: boolean;
+  holdings: DailyHolding[]; // sorted by |change| desc
+}
+
+/**
+ * 1D return across the user's market-driven holdings (equity, mutual funds,
+ * gold) — the universe whose value actually moves day-to-day. Self-consistent:
+ * the header total equals the sum of the listed holdings' changes.
+ */
+export const dailyMovement = (userId: string): DailyMovementResult => {
+  const assets = all<AssetRow>(
+    `SELECT a.*, t.name AS type_name, t.slug AS slug FROM assets a
+     JOIN asset_types t ON t.id = a.asset_type_id
+     WHERE a.user_id = ? AND t.slug IN ('equity','mutual_fund','digital_gold','physical_gold')
+     ORDER BY a.current_value DESC`,
+    [userId],
+  );
+  let total_value = 0;
+  let day_change = 0;
+  let have_data = false;
+  let latest = '';
+  const holdings: DailyHolding[] = assets.map((a) => {
+    const m = getAssetMarket(a.id);
+    if (m && !m.modeled) {
+      have_data = true;
+      if (m.updated_at > latest) latest = m.updated_at;
+    }
+    const change = m ? m.day_change_value : 0;
+    total_value += a.current_value;
+    day_change += change;
+    return {
+      id: a.id,
+      name: a.name,
+      type_name: a.type_name,
+      slug: a.slug,
+      quantity: a.quantity || 0,
+      current: a.current_value,
+      change,
+      pct: m ? m.day_change_pct : 0,
+    };
+  });
+  holdings.sort((x, y) => Math.abs(y.change) - Math.abs(x.change));
+  const prev = total_value - day_change;
+  return {
+    as_of: latest || nowISO(),
+    total_value,
+    day_change,
+    day_change_pct: prev ? Number(((day_change / prev) * 100).toFixed(2)) : 0,
+    count: holdings.length,
+    have_data,
+    holdings,
+  };
+};
+
 /** Equity + mutual-fund holdings with today's change, for the dashboard list. */
 export const marketHoldings = (userId: string): Mover[] => {
   const assets = all<AssetRow>(

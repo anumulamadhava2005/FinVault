@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { View, StyleSheet, Pressable, Linking, RefreshControl, ScrollView } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 
 import { Screen, SectionCard } from '../components/ui';
 import ThemeToggle from '../components/ThemeToggle';
@@ -16,7 +16,7 @@ import { all } from '../db';
 import {
   refreshMarketData,
   getMarketSnapshot,
-  fetchWealthFeed,
+  fetchPortfolioNews,
   getCachedFeed,
   type MarketSnapshot,
   type FeedItem,
@@ -28,6 +28,7 @@ const WealthFeedScreen: React.FC = () => {
   const { userId } = useApp();
   const theme = useTheme();
   const navigation = useNavigation();
+  const router = useRouter();
 
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(getMarketSnapshot());
   const [feed, setFeed] = useState<FeedItem[]>(getCachedFeed());
@@ -57,17 +58,20 @@ const WealthFeedScreen: React.FC = () => {
   }, [userId]);
 
   const isRelevant = (it: FeedItem): boolean => {
+    // Targeted items already carry the holding(s) they were fetched for.
+    if (it.holdings && it.holdings.length) return true;
     const hay = `${it.title} ${it.summary}`.toLowerCase();
     return keywords.some((k) => hay.includes(k));
   };
 
   const load = useCallback(async () => {
-    const [snap, items] = await Promise.all([refreshMarketData(), fetchWealthFeed()]);
+    const [snap, items] = await Promise.all([refreshMarketData(), fetchPortfolioNews(userId!)]);
     if (snap) setSnapshot(snap);
     if (items.length) setFeed(items);
     setLoading(false);
     setRefreshing(false);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -122,11 +126,11 @@ const WealthFeedScreen: React.FC = () => {
         {loading && feed.length === 0 ? (
           <View style={{ paddingVertical: 24, alignItems: 'center' }}>
             <ActivityIndicator />
-            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 8 }}>Loading the latest market news…</Text>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 8 }}>Searching news about your holdings…</Text>
           </View>
         ) : sorted.length === 0 ? (
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-            No news available right now. Pull to refresh when you're online.
+            No news found for your holdings right now. Add stocks/funds or pull to refresh when you're online.
           </Text>
         ) : (
           <View style={{ gap: 4 }}>
@@ -139,14 +143,34 @@ const WealthFeedScreen: React.FC = () => {
                   style={[styles.item, { borderBottomColor: theme.colors.outlineVariant }]}
                 >
                   {relevant && (
-                    <View style={[styles.tag, { backgroundColor: palette.good + '22' }]}>
+                    <Pressable
+                      onPress={() =>
+                        router.push({
+                          pathname: '/news-impact',
+                          params: {
+                            title: it.title,
+                            summary: it.summary?.slice(0, 400) ?? '',
+                            source: it.source,
+                            link: it.link ?? '',
+                            holdings: JSON.stringify(it.holdings ?? []),
+                          },
+                        } as any)
+                      }
+                      style={[styles.tag, { backgroundColor: palette.good + '22' }]}
+                    >
                       <MaterialCommunityIcons name="briefcase-check" size={11} color={palette.good} />
-                      <Text style={{ fontSize: 9, fontWeight: '800', color: palette.good }}>IN YOUR PORTFOLIO</Text>
-                    </View>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: palette.good }}>IN YOUR PORTFOLIO · SEE IMPACT</Text>
+                      <MaterialCommunityIcons name="chevron-right" size={12} color={palette.good} />
+                    </Pressable>
                   )}
                   <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }} numberOfLines={3}>
                     {it.title}
                   </Text>
+                  {it.holdings && it.holdings.length > 0 ? (
+                    <Text variant="labelSmall" style={{ color: palette.good, fontWeight: '700', marginTop: 3 }} numberOfLines={1}>
+                      Affects: {it.holdings.join(', ')}
+                    </Text>
+                  ) : null}
                   {it.summary ? (
                     <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }} numberOfLines={2}>
                       {it.summary}
@@ -163,7 +187,7 @@ const WealthFeedScreen: React.FC = () => {
       </SectionCard>
 
       <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
-        News from public RSS feeds (Moneycontrol, Mint, ET). Tap to read the full story.
+        News matched to your holdings via Google News. Tap a story to read it, or “See impact” to analyse it.
       </Text>
     </ScrollView>
   );

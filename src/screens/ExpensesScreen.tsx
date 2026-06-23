@@ -1,6 +1,6 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useMemo, useState, useLayoutEffect } from 'react';
-import { Platform, ScrollView, View, LayoutAnimation, Alert, Modal, Pressable, StyleSheet } from 'react-native';
+import { Dimensions, Platform, ScrollView, View, LayoutAnimation, Alert, Modal, Pressable, StyleSheet } from 'react-native';
 import { Button, Card, Dialog, FAB, IconButton, Menu, Portal, SegmentedButtons, Text, TextInput, useTheme, Snackbar, Divider, Searchbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -24,7 +24,7 @@ import type { Expense, ExpenseCategory } from '../models/types';
 import { categoryBreakdown, incomeExpenseSeries, expenseAnalytics, generateSpendingInsights } from '../services/finance';
 import { generateExpenseNotifications } from '../services/notificationService';
 import { chartColors, palette } from '../theme';
-import { formatDisplayDate, localISODate, todayISO } from '../utils/date';
+import { formatDisplayDate, localISODate, parseISO, todayISO } from '../utils/date';
 import { formatINR, formatINRCompact, rupeesToPaise } from '../utils/money';
 
 const getMimeType = (filename: string): string => {
@@ -233,6 +233,23 @@ const ExpensesScreen: React.FC = () => {
     set('date', iso);
   };
 
+  // Move the Overview/Budgets/Insights viewing period onto a saved expense's
+  // month so a freshly-logged expense is immediately reflected (otherwise an
+  // expense dated outside the current month looks like it didn't save).
+  // Returns "Mon YYYY" if the period changed, else null.
+  const alignPeriodTo = (iso: string): string | null => {
+    const d = parseISO(iso);
+    if (!d) return null;
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const changed = y !== selectedYear || m !== selectedMonth;
+    if (changed) {
+      setSelectedYear(y);
+      setSelectedMonth(m);
+    }
+    return changed ? d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : null;
+  };
+
   const save = () => {
     const amount = rupeesToPaise(form.amount || '0');
     const catId = form.category_id || categories[0]?.id;
@@ -260,6 +277,8 @@ const ExpensesScreen: React.FC = () => {
       });
       setSnackMsg('Expense added');
     }
+    const movedTo = alignPeriodTo(form.date);
+    if (movedTo) setSnackMsg(`${editingId ? 'Expense updated' : 'Expense added'} · showing ${movedTo}`);
     setForm({ category_id: '', amount: '', description: '', date: todayISO(), bill_uri: null });
     closeEditor();
     refresh();
@@ -1060,9 +1079,14 @@ const ExpensesScreen: React.FC = () => {
 
       <Portal>
         {/* ADD/EDIT EXPENSE MODAL OVERHAULED */}
-        <Dialog visible={addOpen} onDismiss={closeEditor} style={{ borderRadius: theme.roundness, paddingVertical: 8, height: 'auto' }}>
+        <Dialog visible={addOpen} onDismiss={closeEditor} style={{ borderRadius: theme.roundness, paddingVertical: 8, maxHeight: '90%' }}>
           <Dialog.Title style={{ fontWeight: '700' }}>{editingId ? 'Edit Expense' : 'Add Expense'}</Dialog.Title>
-          <Dialog.Content style={{ gap: 12 }}>
+          <Dialog.Content style={{ paddingBottom: 0 }}>
+            <ScrollView
+              style={{ maxHeight: Dimensions.get('window').height * 0.55 }}
+              contentContainerStyle={{ gap: 12, paddingVertical: 4 }}
+              keyboardShouldPersistTaps="handled"
+            >
             {/* Category selection field with dropdown affordance */}
             <Menu
               visible={catMenu}
@@ -1207,8 +1231,9 @@ const ExpensesScreen: React.FC = () => {
                 </View>
               )}
             </View>
+            </ScrollView>
           </Dialog.Content>
-          <Dialog.Actions style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 24, marginTop: 8 }}>
+          <Dialog.Actions style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 24, paddingTop: 12, height: 80 }}>
             <BouncePressable onPress={closeEditor} style={{ flex: 1 }}>
               <Button style={{ borderRadius: theme.roundness, width: '100%' }} mode="outlined" pointerEvents="none">
                 Cancel
@@ -1512,7 +1537,11 @@ const ExpensesScreen: React.FC = () => {
       <BillScanModal
         visible={scanOpen}
         onClose={() => setScanOpen(false)}
-        onSaved={() => { refresh(); setSnackMsg('Expense saved from scan'); }}
+        onSaved={(savedDate) => {
+          refresh();
+          const movedTo = savedDate ? alignPeriodTo(savedDate) : null;
+          setSnackMsg(movedTo ? `Expense saved · showing ${movedTo}` : 'Expense saved from scan');
+        }}
       />
 
       <Snackbar visible={snackMsg !== null} onDismiss={() => setSnackMsg(null)} duration={3000}>

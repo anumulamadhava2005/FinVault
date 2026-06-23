@@ -14,12 +14,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import TextRecognition from '@dariyd/react-native-text-recognition';
+import { recognizeText } from '@dariyd/react-native-text-recognition';
 
 import { useApp } from '../context/AppContext';
 import { all, insert, newId } from '../db';
 import type { ExpenseCategory } from '../models/types';
 import { copyToPersistentStorage } from '../services/attachments';
+import { ocrWithPaddle } from '../services/paddleOcr';
 import { parseBill, type BillLineItem } from '../utils/billParser';
 import { formatDisplayDate, localISODate, todayISO } from '../utils/date';
 import { formatINR, rupeesToPaise } from '../utils/money';
@@ -40,7 +41,8 @@ const CATEGORY_HINTS: [RegExp, string][] = [
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onSaved?: () => void;
+  /** Called after a successful save with the saved expense's ISO date. */
+  onSaved?: (savedDate?: string) => void;
 }
 
 const BillScanModal: React.FC<Props> = ({ visible, onClose, onSaved }) => {
@@ -119,24 +121,36 @@ const BillScanModal: React.FC<Props> = ({ visible, onClose, onSaved }) => {
     const persistentUri = await copyToPersistentStorage(captured.uri, captured.fileName || 'bill.jpg');
     setBillUri(persistentUri);
 
-    // Run OCR on the captured image. @dariyd/react-native-text-recognition
-    // returns an array of recognized text blocks/lines, which we join into one
-    // string for the field parser. ML Kit (Android) / Vision (iOS) want a plain
-    // file path, so strip the file:// scheme.
+    // OCR pipeline: try PaddleOCR 3.0 (server-side) first, then fall back to
+    // on-device ML Kit / Vision. Never throws — empty text → manual entry.
     let text = '';
-    try {
-      const path = captured.uri.replace(/^file:\/\//, '');
-      const result = await TextRecognition.recognizeText(path);
-      text = result.fullText
-        ?? result.pages?.map((p) => p.fullText).join('\n')
-        ?? '';
-    } catch (err) {
-      console.warn('OCR failed:', err);
-      Alert.alert(
-        'Could not read the bill',
-        'Text recognition failed — you can still enter the details manually.',
-      );
+    let usedEngine = 'none';
+
+    const paddle = await ocrWithPaddle(captured.uri);
+    if (paddle) {
+      text = paddle;
+      usedEngine = 'PaddleOCR';
+    } else {
+      // On-device ML Kit (Android) / Vision (iOS). InputImage.fromFilePath wants
+      // a content:// or file:// URI, so pass the original URI (with scheme).
+      try {
+        const result = await recognizeText(captured.uri, {});
+        if (result.success) {
+          const joined =
+            result.fullText ??
+            result.pages?.flatMap((p) => p.elements.map((e) => e.text)).join('\n') ??
+            '';
+          if (joined.trim()) {
+            text = joined;
+            usedEngine = 'on-device';
+          }
+        }
+      } catch (err) {
+        console.warn('[BillScan] on-device OCR failed:', err instanceof Error ? err.message : err);
+      }
     }
+
+    console.log(`[BillScan] engine=${usedEngine}, chars=${text.length}`);
 
     const parsed = parseBill(text);
     setRawText(parsed.rawText);
@@ -183,7 +197,7 @@ const BillScanModal: React.FC<Props> = ({ visible, onClose, onSaved }) => {
       bill_uri: billUri,
     });
     refresh();
-    onSaved?.();
+    onSaved?.(date);
     onClose();
   };
 

@@ -177,13 +177,85 @@ const InsightsScreen: React.FC = () => {
       </SectionCard>
 
       {/* ── Returns vs benchmark ── */}
-      <SectionCard title="Returns vs Benchmark">
-        <Row>
-          <Kpi flex label="Portfolio XIRR" value={returns.portfolio_xirr != null ? `${returns.portfolio_xirr}%` : '—'} subTone={(returns.portfolio_xirr ?? 0) >= 11 ? 'good' : 'bad'} sub={(returns.portfolio_xirr ?? 0) >= 11 ? 'Beating ~11%' : 'Below ~11%'} />
-          <Kpi flex label="Missed Gains" value={formatINRCompact(bench.total_missed_gains)} subTone={bench.total_missed_gains > 0 ? 'bad' : 'good'} sub={`${bench.underperformers.length} laggard(s)`} />
-        </Row>
+      <SectionCard title="How Did Your Portfolio Perform?">
+        {returns.portfolio_xirr == null ? (
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            Hold investments for a few months to compute money-weighted returns (XIRR) and compare against their benchmarks.
+          </Text>
+        ) : (() => {
+          const pX = returns.portfolio_xirr;
+          const bX = bench.blended_benchmark;
+          const lagging = pX < bX;
+          const maxVal = Math.max(pX, bX, 1);
+          const H = 110;
+          const barH = (v: number) => Math.max(Math.round((Math.max(v, 0) / maxVal) * H), 3);
+          const pColor = lagging ? palette.danger : palette.good;
+          return (
+            <>
+              {/* XIRR bar comparison */}
+              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', gap: 40, height: H + 40, paddingTop: 18 }}>
+                {[
+                  { label: 'Portfolio XIRR', value: pX, color: pColor },
+                  { label: 'Benchmark XIRR', value: bX, color: theme.colors.onSurfaceVariant },
+                ].map((b) => (
+                  <View key={b.label} style={{ alignItems: 'center', width: 96 }}>
+                    <Text variant="titleMedium" style={{ fontWeight: '800', color: theme.colors.onSurface, marginBottom: 4 }}>
+                      {b.value}%
+                    </Text>
+                    <View style={{ width: 64, height: barH(b.value), borderRadius: 6, backgroundColor: b.color }} />
+                  </View>
+                ))}
+              </View>
+              {/* Legend */}
+              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: pColor }} />
+                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>Portfolio XIRR</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: theme.colors.onSurfaceVariant }} />
+                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>Benchmark XIRR</Text>
+                </View>
+              </View>
+
+              {/* Callout */}
+              <View style={{
+                flexDirection: 'row',
+                gap: 10,
+                alignItems: 'flex-start',
+                marginTop: 16,
+                padding: 12,
+                borderRadius: theme.roundness,
+                borderWidth: 1,
+                backgroundColor: (lagging ? palette.danger : palette.good) + '14',
+                borderColor: (lagging ? palette.danger : palette.good) + '40',
+              }}>
+                <MaterialCommunityIcons
+                  name={lagging ? 'alert-circle' : 'check-circle'}
+                  size={18}
+                  color={lagging ? palette.danger : palette.good}
+                  style={{ marginTop: 1 }}
+                />
+                <Text variant="bodySmall" style={{ flex: 1, color: theme.colors.onSurface, fontWeight: '600', lineHeight: 18 }}>
+                  {lagging ? (
+                    <>
+                      You have missed gains of{' '}
+                      <Text style={{ color: palette.danger, fontWeight: '800' }}>{formatINR(bench.total_missed_gains)}</Text>
+                      {' '}— your portfolio is underperforming its benchmark by {(bX - pX).toFixed(1)}%.
+                    </>
+                  ) : (
+                    <>Your portfolio is beating its benchmark by{' '}
+                      <Text style={{ color: palette.good, fontWeight: '800' }}>{(pX - bX).toFixed(1)}%</Text>. Keep it up.
+                    </>
+                  )}
+                </Text>
+              </View>
+            </>
+          );
+        })()}
+
         {bench.underperformers.length > 0 && (
-          <View style={{ marginTop: 12 }}>
+          <View style={{ marginTop: 16 }}>
             <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', marginBottom: 6 }}>UNDERPERFORMERS</Text>
             {bench.underperformers.slice(0, 5).map((r) => (
               <View key={r.id} style={styles.benchRow}>

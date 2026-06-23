@@ -247,6 +247,7 @@ export const benchmarkAnalysis = (userId: string) => {
       name: a.name,
       slug: a.slug,
       type_name: a.type_name,
+      current: a.current_value,
       annual_return: a.annual_return,
       benchmark_name: bench.name,
       benchmark_return: bench.annual,
@@ -259,7 +260,21 @@ export const benchmarkAnalysis = (userId: string) => {
   });
   const underperformers = rows.filter((r) => r.underperforming).sort((a, b) => a.delta - b.delta);
   const total_missed = underperformers.reduce((s, r) => s + r.missed_gains, 0);
-  return { rows: rows.sort((a, b) => a.delta - b.delta), underperformers, total_missed_gains: total_missed };
+
+  // Value-weighted blended benchmark XIRR across matured holdings — a single
+  // figure to compare the whole portfolio's XIRR against.
+  const maturedRows = rows.filter((r) => r.matured && r.current > 0);
+  const totalCur = maturedRows.reduce((s, r) => s + r.current, 0);
+  const blended_benchmark = totalCur
+    ? Number((maturedRows.reduce((s, r) => s + r.benchmark_return * r.current, 0) / totalCur).toFixed(1))
+    : 0;
+
+  return {
+    rows: rows.sort((a, b) => a.delta - b.delta),
+    underperformers,
+    total_missed_gains: total_missed,
+    blended_benchmark,
+  };
 };
 
 // ─── Hidden cost detection (TER) ─────────────────────────────────────────────

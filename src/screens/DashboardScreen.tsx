@@ -327,10 +327,16 @@ const DashboardScreen: React.FC = () => {
           const up = movers.todayChange >= 0;
           const c = up ? palette.good : palette.danger;
           return (
-            <SectionCard style={{ marginBottom: 16 }}>
-              <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', letterSpacing: 0.5 }}>
-                PORTFOLIO VALUE · TODAY
-              </Text>
+            <SectionCard style={{ marginBottom: 16 }} onPress={() => router.push('/daily-movement' as any)}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', letterSpacing: 0.5 }}>
+                  PORTFOLIO VALUE · TODAY
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                  <Text variant="labelSmall" style={{ color: theme.colors.primary, fontWeight: '700' }}>1D Return</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={16} color={theme.colors.primary} />
+                </View>
+              </View>
               <Text style={{ fontSize: 32, fontWeight: '900', color: theme.colors.onSurface, letterSpacing: -0.8, marginTop: 4, fontVariant: ['tabular-nums'] }}>
                 {formatINR(movers.totalValue)}
               </Text>
