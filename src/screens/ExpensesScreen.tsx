@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useMemo, useState, useLayoutEffect } from 'react';
 import { Platform, ScrollView, View, LayoutAnimation, Alert, Modal, Pressable, StyleSheet } from 'react-native';
-import { Button, Dialog, FAB, IconButton, Menu, Portal, SegmentedButtons, Text, TextInput, useTheme, Snackbar, Divider, Searchbar, Card } from 'react-native-paper';
+import { Button, Card, Dialog, FAB, IconButton, Menu, Portal, SegmentedButtons, Text, TextInput, useTheme, Snackbar, Divider, Searchbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import { File, Directory, Paths } from 'expo-file-system';
@@ -11,6 +11,7 @@ import { Image } from 'expo-image';
 import * as Sharing from 'expo-sharing';
 import { useNavigation } from 'expo-router';
 import BouncePressable from '../components/BouncePressable';
+import NotificationBell from '../components/NotificationBell';
 import { DistributionPie, TrendLine } from '../components/charts';
 import { EmptyState, Kpi, LineItem, ProgressBar, Row, Screen, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
@@ -18,9 +19,10 @@ import { all, insert, newId, remove, update, tx } from '../db';
 import { useData } from '../hooks/useData';
 import type { Expense, ExpenseCategory } from '../models/types';
 import { categoryBreakdown, incomeExpenseSeries, expenseAnalytics, generateSpendingInsights } from '../services/finance';
+import { generateExpenseNotifications } from '../services/notificationService';
 import { chartColors, palette } from '../theme';
 import { formatDisplayDate, localISODate, todayISO } from '../utils/date';
-import { formatINR, rupeesToPaise } from '../utils/money';
+import { formatINR, formatINRCompact, rupeesToPaise } from '../utils/money';
 
 const getMimeType = (filename: string): string => {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
@@ -51,10 +53,8 @@ const ExpensesScreen: React.FC = () => {
   const [trendMenu, setTrendMenu] = useState(false);
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
   const [tempYear, setTempYear] = useState<number>(now.getFullYear());
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [budgetSettingsOpen, setBudgetSettingsOpen] = useState(false);
   const [editBudgets, setEditBudgets] = useState<Record<string, string>>({});
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   // Bulk operation states
   const [csvOpen, setCsvOpen] = useState(false);
@@ -155,17 +155,19 @@ const ExpensesScreen: React.FC = () => {
     refresh();
   };
 
+  // Generate expense budget notifications whenever data changes
+  useData(() => {
+    try { generateExpenseNotifications(userId!, selectedYear, selectedMonth); } catch { /* non-critical */ }
+    return null;
+  });
+
   useLayoutEffect(() => {
-    const hasAlerts = exceededCategories.length > 0 || (budgetTotal > 0 && analytics.summary.total > budgetTotal);
     navigation.setOptions({
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
-          <IconButton
-            icon={hasAlerts ? 'bell-alert' : 'bell-outline'}
-            iconColor={hasAlerts ? palette.danger : theme.colors.onSurface}
-            onPress={() => setNotificationsOpen(true)}
-            size={22}
-            style={{ margin: 0 }}
+          <NotificationBell
+            kinds={['budget_exceeded']}
+            color={theme.colors.onSurface}
           />
           <IconButton
             icon="bullseye-arrow"
@@ -174,20 +176,10 @@ const ExpensesScreen: React.FC = () => {
             size={22}
             style={{ margin: 0 }}
           />
-          <IconButton
-            icon="cog"
-            iconColor={theme.colors.onSurface}
-            onPress={() => {
-              setTempYear(selectedYear);
-              setSettingsOpen(true);
-            }}
-            size={22}
-            style={{ margin: 0 }}
-          />
         </View>
       ),
     });
-  }, [navigation, theme, selectedYear, exceededCategories, budgetTotal, analytics.summary.total]);
+  }, [navigation, theme, selectedYear, selectedMonth]);
 
   const set = (k: keyof typeof form, v: string | null) => setForm((f) => ({ ...f, [k]: v }));
   const catName = categories.find((c) => c.id === form.category_id)?.name || 'Select Category';
@@ -500,43 +492,65 @@ const ExpensesScreen: React.FC = () => {
   return (
     <>
       <Screen>
-        {/* Compact filters bar - single horizontal row */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 0, marginBottom: 12, gap: 10 }}>
-          <View style={{ flexDirection: 'row', gap: 6, flex: 1 }}>
-            <Button
-              mode="outlined"
-              compact
-              onPress={() => {
-                setTempYear(selectedYear);
-                setPeriodPickerOpen(true);
-              }}
-              icon="calendar"
-              contentStyle={{ flexDirection: 'row-reverse', height: 36 }}
-              labelStyle={{ fontSize: 11, fontWeight: '700' }}
-            >
-              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][selectedMonth - 1]} {selectedYear}
-            </Button>
+        {/* Top action row: Period · Trend · Import · Export */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 0, marginBottom: 12, gap: 6, flexWrap: 'wrap' }}>
+          <Button
+            mode="outlined"
+            compact
+            onPress={() => {
+              setTempYear(selectedYear);
+              setPeriodPickerOpen(true);
+            }}
+            icon="calendar"
+            contentStyle={{ flexDirection: 'row-reverse', height: 36 }}
+            labelStyle={{ fontSize: 11, fontWeight: '700' }}
+          >
+            {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][selectedMonth - 1]} {selectedYear}
+          </Button>
 
-            <Menu
-              visible={trendMenu}
-              onDismiss={() => setTrendMenu(false)}
-              anchor={
-                <Button
-                  mode="outlined"
-                  compact
-                  onPress={() => setTrendMenu(true)}
-                  icon="chart-timeline-variant"
-                  contentStyle={{ flexDirection: 'row-reverse', height: 36 }}
-                  labelStyle={{ fontSize: 11 }}
-                >
-                  {trendType === 'monthly' ? 'Monthly' : 'Yearly'}
-                </Button>
-              }
-            >
-              <Menu.Item title="Monthly" onPress={() => { setTrendType('monthly'); setTrendMenu(false); }} />
-              <Menu.Item title="Yearly" onPress={() => { setTrendType('yearly'); setTrendMenu(false); }} />
-            </Menu>
-          </View>
+          <Menu
+            visible={trendMenu}
+            onDismiss={() => setTrendMenu(false)}
+            anchor={
+              <Button
+                mode="outlined"
+                compact
+                onPress={() => setTrendMenu(true)}
+                icon="chart-timeline-variant"
+                contentStyle={{ flexDirection: 'row-reverse', height: 36 }}
+                labelStyle={{ fontSize: 11 }}
+              >
+                {trendType === 'monthly' ? 'Monthly' : 'Yearly'}
+              </Button>
+            }
+          >
+            <Menu.Item title="Monthly" onPress={() => { setTrendType('monthly'); setTrendMenu(false); }} />
+            <Menu.Item title="Yearly" onPress={() => { setTrendType('yearly'); setTrendMenu(false); }} />
+          </Menu>
+
+          <Button
+            compact
+            mode="text"
+            icon="file-upload-outline"
+            labelStyle={{ fontSize: 11 }}
+            onPress={() => {
+              setCsvText('');
+              setImportResult(null);
+              setCsvOpen(true);
+            }}
+          >
+            Import
+          </Button>
+
+          <Button
+            compact
+            mode="text"
+            icon="file-download-outline"
+            labelStyle={{ fontSize: 11 }}
+            onPress={handleExportExpenses}
+          >
+            Export
+          </Button>
         </View>
 
         {/* 4-Tab Navigation selector */}
@@ -555,63 +569,79 @@ const ExpensesScreen: React.FC = () => {
         {/* 1. OVERVIEW TAB */}
         {activeTab === 'overview' && (
           <View style={{ paddingHorizontal: 0, gap: 12 }}>
-            <SectionCard style={{ padding: 14, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.outlineVariant }}>
-              <View style={{ paddingVertical: 2 }}>
-                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '500' }}>
-                  Total spending
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 2 }}>
-                  <Text variant="headlineMedium" style={{ fontWeight: '800', color: theme.colors.onSurface, fontSize: 30 }}>
+            {/* Summary card — matches Insurance/Assets card style */}
+            <Card
+              style={{
+                backgroundColor: theme.colors.elevation.level1,
+                borderWidth: 1,
+                borderColor: theme.colors.outlineVariant,
+                borderRadius: theme.roundness,
+                overflow: 'hidden',
+              }}
+            >
+              <Card.Content style={{ padding: 20 }}>
+                <View>
+                  <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600' }}>
+                    Total Spending
+                  </Text>
+                  <Text
+                    variant="headlineLarge"
+                    style={{ fontWeight: '800', marginTop: 4, color: theme.colors.primary, fontVariant: ['tabular-nums'] }}
+                  >
                     {formatINR(analytics.summary.total)}
                   </Text>
                   {budgetTotal > 0 && (
-                    <View style={{
-                      backgroundColor: analytics.summary.total > budgetTotal ? 'rgba(235, 94, 85, 0.15)' : 'rgba(82, 167, 126, 0.15)',
-                      paddingHorizontal: 8,
-                      paddingVertical: 2,
-                      borderRadius: 8,
-                    }}>
-                      <Text style={{
-                        fontSize: 10,
-                        fontWeight: '700',
-                        color: analytics.summary.total > budgetTotal ? palette.danger : palette.good
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <View style={{
+                        backgroundColor: analytics.summary.total > budgetTotal ? 'rgba(235, 94, 85, 0.15)' : 'rgba(82, 167, 126, 0.15)',
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 8,
                       }}>
-                        {Math.round((analytics.summary.total / budgetTotal) * 100)}% of budget
+                        <Text style={{
+                          fontSize: 11,
+                          fontWeight: '700',
+                          color: analytics.summary.total > budgetTotal ? palette.danger : palette.good
+                        }}>
+                          {Math.round((analytics.summary.total / budgetTotal) * 100)}% of budget
+                        </Text>
+                      </View>
+                      <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                        {analytics.summary.total > budgetTotal ? 'over' : 'within'} limit
                       </Text>
                     </View>
                   )}
                 </View>
-              </View>
-              <Divider style={{ marginVertical: 10, backgroundColor: theme.colors.outlineVariant }} />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flex: 1, alignItems: 'flex-start' }}>
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 10, fontWeight: '500', marginBottom: 2 }}>
-                    Total Budget
-                  </Text>
-                  <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
-                    {formatINR(budgetTotal)}
-                  </Text>
+
+                <Divider style={{ marginVertical: 16, backgroundColor: theme.colors.outlineVariant }} />
+
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600' }}>
+                      Monthly Budget
+                    </Text>
+                    <Text
+                      variant="titleMedium"
+                      style={{ fontWeight: '700', marginTop: 2, color: theme.colors.onSurface, fontVariant: ['tabular-nums'] }}
+                    >
+                      {budgetTotal > 0 ? formatINR(budgetTotal) : '—'}
+                    </Text>
+                  </View>
+                  <View style={{ width: 1, backgroundColor: theme.colors.outlineVariant, marginHorizontal: 20 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600' }}>
+                      Avg Daily / Txns
+                    </Text>
+                    <Text
+                      variant="titleMedium"
+                      style={{ fontWeight: '700', marginTop: 2, color: theme.colors.onSurface, fontVariant: ['tabular-nums'] }}
+                    >
+                      {formatINRCompact(analytics.summary.avg_daily)} · {analytics.summary.count}
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ width: 1, height: 28, backgroundColor: theme.colors.outlineVariant, marginHorizontal: 12 }} />
-                <View style={{ flex: 1, alignItems: 'center' }}>
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 10, fontWeight: '500', marginBottom: 2 }}>
-                    Avg Daily Spend
-                  </Text>
-                  <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
-                    {formatINR(analytics.summary.avg_daily)}
-                  </Text>
-                </View>
-                <View style={{ width: 1, height: 28, backgroundColor: theme.colors.outlineVariant, marginHorizontal: 12 }} />
-                <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 10, fontWeight: '500', marginBottom: 2 }}>
-                    Transactions
-                  </Text>
-                  <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
-                    {analytics.summary.count}
-                  </Text>
-                </View>
-              </View>
-            </SectionCard>
+              </Card.Content>
+            </Card>
 
             <SectionCard title={trendType === 'monthly' ? 'Daily Spending Trend' : 'Monthly Spending Trend'}>
               <TrendLine
@@ -1144,7 +1174,7 @@ const ExpensesScreen: React.FC = () => {
             </BouncePressable>
             <BouncePressable onPress={save} style={{ flex: 1 }}>
               <Button mode="contained" style={{ borderRadius: theme.roundness, width: '100%' }} pointerEvents="none">
-                {editingId ? 'Save' : 'Add'}
+                {editingId ? 'Save Changes' : 'Save Expense'}
               </Button>
             </BouncePressable>
           </Dialog.Actions>
@@ -1330,58 +1360,7 @@ const ExpensesScreen: React.FC = () => {
           </Dialog.Actions>
         </Dialog>
 
-        {/* Expenses Settings & Data Tools Dialog */}
-        <Dialog visible={settingsOpen} onDismiss={() => setSettingsOpen(false)} style={{ borderRadius: theme.roundness, paddingVertical: 8 }}>
-          <Dialog.Title style={{ fontWeight: '700' }}>Expenses Options</Dialog.Title>
-          <Dialog.Content style={{ gap: 12 }}>
-            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 4 }}>
-              Manage your transactions data via CSV files:
-            </Text>
-            
-            <BouncePressable
-              onPress={() => {
-                setSettingsOpen(false);
-                setCsvText('');
-                setImportResult(null);
-                setCsvOpen(true);
-              }}
-            >
-              <Button
-                mode="outlined"
-                icon="file-upload"
-                style={{ borderRadius: theme.roundness, width: '100%' }}
-                contentStyle={{ justifyContent: 'flex-start', height: 48 }}
-                labelStyle={{ fontSize: 13, fontWeight: '600' }}
-                pointerEvents="none"
-              >
-                Bulk Import from CSV
-              </Button>
-            </BouncePressable>
-
-            <BouncePressable
-              onPress={() => {
-                setSettingsOpen(false);
-                handleExportExpenses();
-              }}
-            >
-              <Button
-                mode="outlined"
-                icon="file-download"
-                style={{ borderRadius: theme.roundness, width: '100%' }}
-                contentStyle={{ justifyContent: 'flex-start', height: 48 }}
-                labelStyle={{ fontSize: 13, fontWeight: '600' }}
-                pointerEvents="none"
-              >
-                Export to CSV File
-              </Button>
-            </BouncePressable>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <BouncePressable onPress={() => setSettingsOpen(false)} style={{ width: 100 }}>
-              <Button mode="outlined" style={{ borderRadius: theme.roundness, width: '100%' }} pointerEvents="none">Close</Button>
-            </BouncePressable>
-          </Dialog.Actions>
-        </Dialog>
+        {/* Settings dialog removed — Import/Export now live in the top action row */}
 
         {/* Budget Settings Dialog */}
         <Dialog visible={budgetSettingsOpen} onDismiss={() => setBudgetSettingsOpen(false)} style={{ maxHeight: '80%', borderRadius: theme.roundness }}>
@@ -1428,72 +1407,7 @@ const ExpensesScreen: React.FC = () => {
           </Dialog.Actions>
         </Dialog>
 
-        {/* Budget Notifications Dialog */}
-        <Dialog visible={notificationsOpen} onDismiss={() => setNotificationsOpen(false)} style={{ maxHeight: '80%', borderRadius: theme.roundness }}>
-          <Dialog.Title style={{ fontWeight: '700' }}>Budget Alerts</Dialog.Title>
-          <Dialog.Content>
-            <ScrollView style={{ maxHeight: 350 }}>
-              {exceededCategories.length === 0 && !(budgetTotal > 0 && analytics.summary.total > budgetTotal) ? (
-                <View style={{ alignItems: 'center', paddingVertical: 20, gap: 8 }}>
-                  <MaterialCommunityIcons name="check-circle" size={48} color={palette.good} />
-                  <Text variant="titleMedium" style={{ fontWeight: '700', textAlign: 'center' }}>All Clear!</Text>
-                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
-                    You have not exceeded any category budgets or your overall budget for this period. Keep it up!
-                  </Text>
-                </View>
-              ) : (
-                <View style={{ gap: 16 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <MaterialCommunityIcons name="bell-ring" size={24} color={palette.danger} />
-                    <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
-                      Attention Required
-                    </Text>
-                  </View>
-
-                  {budgetTotal > 0 && analytics.summary.total > budgetTotal && (
-                    <Card style={{ backgroundColor: 'rgba(235, 94, 85, 0.08)', borderWidth: 1, borderColor: palette.danger + '40', borderRadius: theme.roundness, padding: 12 }}>
-                      <Text variant="titleSmall" style={{ fontWeight: '700', color: palette.danger, marginBottom: 2 }}>
-                        Overall Budget Exceeded
-                      </Text>
-                      <Text variant="bodySmall" style={{ color: theme.colors.onSurface, lineHeight: 18 }}>
-                        Total spent is <Text style={{ fontWeight: '700' }}>{formatINR(analytics.summary.total)}</Text>, which exceeds the total budget of <Text style={{ fontWeight: '700' }}>{formatINR(budgetTotal)}</Text> by <Text style={{ fontWeight: '700', color: palette.danger }}>{formatINR(analytics.summary.total - budgetTotal)}</Text>.
-                      </Text>
-                    </Card>
-                  )}
-
-                  {exceededCategories.length > 0 && (
-                    <View style={{ gap: 8 }}>
-                      <Text variant="bodySmall" style={{ fontWeight: '700', color: theme.colors.onSurfaceVariant }}>
-                        Over Budget Categories:
-                      </Text>
-                      {exceededCategories.map((c: any) => (
-                        <Card key={c.id} style={{ borderWidth: 1, borderColor: theme.colors.outlineVariant, borderRadius: theme.roundness, padding: 12, backgroundColor: theme.colors.surface }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
-                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.color }} />
-                              <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }} numberOfLines={1}>{c.name}</Text>
-                            </View>
-                            <Text variant="bodySmall" style={{ fontWeight: '700', color: palette.danger }}>
-                              + {formatINR(c.amount - c.budget)}
-                            </Text>
-                          </View>
-                          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                            Spent: <Text style={{ fontWeight: '600', color: theme.colors.onSurface }}>{formatINR(c.amount)}</Text> / Budget: <Text style={{ fontWeight: '600' }}>{formatINR(c.budget)}</Text> ({c.utilized}% utilized)
-                          </Text>
-                        </Card>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              )}
-            </ScrollView>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <BouncePressable onPress={() => setNotificationsOpen(false)} style={{ width: 100 }}>
-              <Button mode="outlined" style={{ borderRadius: theme.roundness, width: '100%' }} pointerEvents="none">Dismiss</Button>
-            </BouncePressable>
-          </Dialog.Actions>
-        </Dialog>
+        {/* Budget alerts now handled by NotificationBell in the header (budget_exceeded kind) */}
 
         {/* Fullscreen Lightbox Modal for Image Preview */}
         <Modal

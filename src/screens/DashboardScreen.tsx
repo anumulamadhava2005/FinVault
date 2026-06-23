@@ -1,11 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Animated, ScrollView, Easing, TouchableOpacity, Alert } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
-import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Easing, ScrollView, TouchableOpacity, View } from 'react-native';
+import { Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import BouncePressable from '../components/BouncePressable';
+import { DistributionPie, TrendLine } from '../components/charts';
+import { Kpi, LineItem, ProgressBar, Row, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
+import { newId, tx } from '../db';
 import { useData } from '../hooks/useData';
 import {
   financialHealth,
@@ -13,16 +17,12 @@ import {
   incomeExpenseSeries,
   netWorth,
   portfolioSummary,
-  upcomingSips,
   spendingInsights,
+  upcomingSips,
 } from '../services/finance';
-import { SectionCard, Kpi, Row, LineItem, ProgressBar } from '../components/ui';
-import { DistributionPie, TrendLine } from '../components/charts';
 import { chartColors, palette, statusColor } from '../theme';
+import { addMonths, localISODate, parseISO } from '../utils/date';
 import { formatINR, formatINRCompact, scoreColor } from '../utils/money';
-import BouncePressable from '../components/BouncePressable';
-import { tx, run, newId } from '../db';
-import { parseISO, addMonths, localISODate } from '../utils/date';
 
 const CollapsibleCard: React.FC<{
   title: string;
@@ -278,7 +278,7 @@ const DashboardScreen: React.FC = () => {
             }}>
               {formatINR(nw.net_worth)}
             </Text>
-            
+
             <Row style={{ marginTop: 18 }}>
               <Kpi label="Total Assets" value={formatINR(nw.total_assets)} subTone="good" sub="invested + growth" />
               <Kpi label="Liabilities" value={formatINR(nw.total_liabilities)} subTone="bad" sub="outstanding debt" />
@@ -333,7 +333,7 @@ const DashboardScreen: React.FC = () => {
                 <Text variant="titleSmall" style={{ fontWeight: '700' }}>
                   {health.rating}
                 </Text>
-                
+
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                   <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '500' }}>
                     Savings rate {health.savings_rate}%
@@ -430,9 +430,8 @@ const DashboardScreen: React.FC = () => {
             right={
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
-                  {formatINRCompact(insights.month_total)}
+                  {formatINRCompact(insights.month_total)}/month
                 </Text>
-                <MaterialCommunityIcons name="lightbulb-on" size={18} color={theme.colors.onSurfaceVariant} />
               </View>
             }
           >

@@ -3,9 +3,11 @@ import { View, ScrollView, StyleSheet } from 'react-native';
 import {
   Button,
   Dialog,
+  FAB,
   IconButton,
   Menu,
   Portal,
+  Snackbar,
   Text,
   TextInput,
   useTheme,
@@ -15,6 +17,10 @@ import {
   Card,
 } from 'react-native-paper';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BouncePressable from '../components/BouncePressable';
 
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
@@ -57,11 +63,17 @@ const blank = {
 const ProtectScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
-  
+  const insets = useSafeAreaInsets();
+
   const policies = useData(() => all<InsurancePolicy>('SELECT * FROM insurance_policies WHERE user_id = ? ORDER BY created_at DESC', [userId!]));
   const summary = useData(() => protectSummary(userId!));
 
   const [addOpen, setAddOpen] = useState(false);
+
+  // CSV Import state
+  const [importOpen, setImportOpen] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
+  const [snackMsg, setSnackMsg] = useState<string | null>(null);
   const [editPolicyId, setEditPolicyId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...blank });
   const [typeMenu, setTypeMenu] = useState(false);
@@ -163,6 +175,139 @@ const ProtectScreen: React.FC = () => {
     if (confirmId) remove('insurance_policies', confirmId);
     setConfirmId(null);
     refresh();
+  };
+
+  const handleCsvImport = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'text/csv',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      const csvText = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
+
+      const lines = csvText.split(/\r?\n/);
+      if (lines.length <= 1) {
+        setImportResult({ success: 0, failed: 0, errors: ['No data found or only header row exists.'] });
+        return;
+      }
+
+      const headers = lines[0].split(',').map((h) => h.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'));
+
+      // Column index helpers
+      const col = (names: string[]) => {
+        for (const n of names) {
+          const idx = headers.indexOf(n);
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      const typeIdx = col(['policy_type', 'type']);
+      const nameIdx = col(['policy_name', 'name']);
+      const providerIdx = col(['provider', 'insurer', 'company']);
+      const policyNumIdx = col(['policy_number', 'policy_no', 'number']);
+      const holderIdx = col(['holder_name', 'holder', 'insured']);
+      const coverageIdx = col(['coverage_amount', 'coverage', 'sum_assured', 'cover']);
+      const premiumIdx = col(['premium_amount', 'premium']);
+      const freqIdx = col(['premium_frequency', 'frequency', 'freq']);
+      const startIdx = col(['start_date', 'start']);
+      const expiryIdx = col(['expiry_date', 'expiry', 'end_date', 'end']);
+      const dueIdx = col(['next_due_date', 'due_date', 'next_due', 'renewal_date']);
+      const nomineeIdx = col(['nominee_name', 'nominee']);
+      const nomineeRelIdx = col(['nominee_relationship', 'relationship', 'nominee_rel']);
+      const claimRatioIdx = col(['claim_ratio', 'claim_settlement_ratio', 'csr']);
+      const taxIdx = col(['tax_benefit', 'tax_section', 'tax']);
+
+      if (nameIdx === -1 || coverageIdx === -1 || premiumIdx === -1) {
+        setImportResult({
+          success: 0,
+          failed: 0,
+          errors: ['CSV must contain columns: policy_name, coverage_amount, premium_amount.'],
+        });
+        return;
+      }
+
+      const VALID_TYPES = ['life', 'health', 'term', 'vehicle', 'property', 'travel', 'other'];
+      const VALID_FREQS = ['monthly', 'quarterly', 'half-yearly', 'yearly', 'one-time'];
+
+      let successCount = 0;
+      const errors: string[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || line.split(',');
+        const row = matches.map((v) => v.replace(/^"|"$/g, '').trim());
+
+        const policyName = nameIdx >= 0 ? row[nameIdx] || '' : '';
+        const coverageRaw = coverageIdx >= 0 ? (row[coverageIdx] || '').replace(/[₹,]/g, '').trim() : '0';
+        const premiumRaw = premiumIdx >= 0 ? (row[premiumIdx] || '').replace(/[₹,]/g, '').trim() : '0';
+        const rowNum = i + 1;
+
+        if (!policyName) {
+          errors.push(`Row ${rowNum}: missing policy_name.`);
+          continue;
+        }
+
+        const coverage = parseFloat(coverageRaw);
+        const premium = parseFloat(premiumRaw);
+        if (isNaN(coverage) || coverage < 0) {
+          errors.push(`Row ${rowNum}: invalid coverage_amount '${coverageRaw}'.`);
+          continue;
+        }
+        if (isNaN(premium) || premium < 0) {
+          errors.push(`Row ${rowNum}: invalid premium_amount '${premiumRaw}'.`);
+          continue;
+        }
+
+        const rawType = typeIdx >= 0 ? (row[typeIdx] || 'other').toLowerCase().trim() : 'other';
+        const policyType = VALID_TYPES.includes(rawType) ? rawType : 'other';
+
+        const rawFreq = freqIdx >= 0 ? (row[freqIdx] || 'yearly').toLowerCase().trim() : 'yearly';
+        const freq = VALID_FREQS.includes(rawFreq) ? rawFreq : 'yearly';
+
+        const startDate = startIdx >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(row[startIdx] || '') ? row[startIdx] : null;
+        const expiryDate = expiryIdx >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(row[expiryIdx] || '') ? row[expiryIdx] : null;
+        const dueDate = dueIdx >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(row[dueIdx] || '') ? row[dueIdx] : null;
+        const claimRatioRaw = claimRatioIdx >= 0 ? row[claimRatioIdx] : null;
+        const claimRatio = claimRatioRaw ? parseFloat(claimRatioRaw) : null;
+
+        insert('insurance_policies', {
+          id: newId(),
+          user_id: userId!,
+          policy_type: policyType,
+          policy_name: policyName,
+          provider: providerIdx >= 0 ? row[providerIdx] || null : null,
+          policy_number: policyNumIdx >= 0 ? row[policyNumIdx] || null : null,
+          holder_name: holderIdx >= 0 ? row[holderIdx] || null : null,
+          coverage_amount: rupeesToPaise(coverageRaw || '0'),
+          premium_amount: rupeesToPaise(premiumRaw || '0'),
+          premium_frequency: freq,
+          start_date: startDate,
+          expiry_date: expiryDate,
+          next_due_date: dueDate,
+          nominee_name: nomineeIdx >= 0 ? row[nomineeIdx] || null : null,
+          nominee_relationship: nomineeRelIdx >= 0 ? row[nomineeRelIdx] || null : null,
+          claim_ratio: !isNaN(claimRatio as number) ? claimRatio : null,
+          tax_benefit: taxIdx >= 0 ? row[taxIdx] || null : null,
+          notes: null,
+          status: 'active',
+          riders: null,
+          created_at: nowISO(),
+        });
+        successCount++;
+      }
+
+      setImportResult({ success: successCount, failed: errors.length, errors });
+      refresh();
+    } catch (err) {
+      setSnackMsg('Import failed. Please check your CSV file.');
+    }
   };
 
   // 15. Dynamic Adequacy Income Retrieval
@@ -542,19 +687,14 @@ const ProtectScreen: React.FC = () => {
             </Text>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              {/* Add policy button */}
+              {/* Import button */}
               <Button
-                mode="contained-tonal"
-                icon="plus"
                 compact
-                onPress={() => {
-                  setForm({ ...blank });
-                  setEditPolicyId(null);
-                  setAddOpen(true);
-                }}
-                style={{ borderRadius: theme.roundness, marginRight: 4 }}
+                mode="text"
+                icon="file-upload-outline"
+                onPress={handleCsvImport}
               >
-                Add
+                Import
               </Button>
 
               {/* Sort Menu */}
@@ -869,6 +1009,33 @@ const ProtectScreen: React.FC = () => {
         )}
       </Screen>
 
+      {/* Floating Add Insurance button */}
+      <BouncePressable
+        onPress={() => {
+          setForm({ ...blank });
+          setEditPolicyId(null);
+          setAddOpen(true);
+        }}
+        style={{
+          position: 'absolute',
+          right: 16,
+          bottom: Math.max(insets.bottom, 16) + 16,
+          zIndex: 10,
+        }}
+      >
+        <FAB
+          icon="plus"
+          label="Add Insurance"
+          style={{
+            backgroundColor: theme.colors.primary,
+            borderRadius: 28,
+            elevation: 4,
+          }}
+          color={theme.colors.onPrimary}
+          pointerEvents="none"
+        />
+      </BouncePressable>
+
       <Portal>
         {/* Add/Edit Policy Dialog */}
         <Dialog visible={addOpen} onDismiss={() => setAddOpen(false)} style={{ maxHeight: '80%', borderRadius: theme.roundness }}>
@@ -1117,7 +1284,48 @@ const ProtectScreen: React.FC = () => {
             </Button>
           </Dialog.Actions>
         </Dialog>
+
+        {/* Import Result Dialog */}
+        <Dialog visible={!!importResult} onDismiss={() => setImportResult(null)} style={{ borderRadius: theme.roundness }}>
+          <Dialog.Title>Import Results</Dialog.Title>
+          <Dialog.Content>
+            <ScrollView style={{ maxHeight: 300 }}>
+              <Text variant="titleMedium" style={{ color: palette.good, fontWeight: '700' }}>
+                Successfully Imported: {importResult?.success} rows
+              </Text>
+              <Text
+                variant="titleMedium"
+                style={{
+                  color: importResult?.failed ? palette.danger : theme.colors.onSurface,
+                  fontWeight: '700',
+                  marginTop: 4,
+                }}
+              >
+                Failed Rows: {importResult?.failed}
+              </Text>
+              {importResult?.errors && importResult.errors.length > 0 && (
+                <View style={{ marginTop: 12 }}>
+                  <Text variant="labelMedium" style={{ fontWeight: '700', marginBottom: 4 }}>
+                    Errors:
+                  </Text>
+                  {importResult.errors.map((err, idx) => (
+                    <Text key={idx} variant="bodySmall" style={{ color: palette.danger, marginVertical: 2 }}>
+                      • {err}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setImportResult(null)}>Close</Button>
+          </Dialog.Actions>
+        </Dialog>
       </Portal>
+
+      <Snackbar visible={snackMsg !== null} onDismiss={() => setSnackMsg(null)} duration={3000}>
+        {snackMsg}
+      </Snackbar>
     </>
   );
 };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View } from 'react-native';
 import { Button, Dialog, FAB, IconButton, Portal, Text, TextInput, useTheme, ActivityIndicator, Divider } from 'react-native-paper';
+import BouncePressable from '../components/BouncePressable';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -268,7 +269,22 @@ const VaultScreen: React.FC = () => {
         )}
       </Screen>
 
-      <FAB icon="plus" label="Add" style={{ position: 'absolute', right: 16, bottom: 16 }} onPress={() => setAddOpen(true)} />
+      <BouncePressable
+        onPress={() => setAddOpen(true)}
+        style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 10 }}
+      >
+        <FAB
+          icon="plus"
+          label="Add"
+          style={{
+            backgroundColor: theme.colors.primary,
+            borderRadius: 28,
+            elevation: 4,
+          }}
+          color={theme.colors.onPrimary}
+          pointerEvents="none"
+        />
+      </BouncePressable>
 
       <Portal>
         <Dialog visible={addOpen} onDismiss={() => setAddOpen(false)} style={{ borderRadius: theme.roundness }}>

@@ -1,0 +1,263 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                   FINVAULT CODEBASE EXPLORATION REPORT                         ║
+║                        Generated: June 23, 2026                                ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+📚 DOCUMENTATION FILES CREATED
+═════════════════════════════════════════════════════════════════════════════════
+
+1. README_EXPLORATION.md (7.7 KB)
+   └─ Master overview and quick start guide
+   └─ Key findings summary
+   └─ Design patterns and next steps
+   └─ START HERE for orientation
+
+2. CODEBASE_EXPLORATION.md (13 KB) 
+   └─ Complete technical reference
+   └─ Detailed line-by-line code locations
+   └─ Button implementations breakdown
+   └─ Database schema context
+   └─ Best for: Deep understanding
+
+3. BUTTON_IMPLEMENTATION_REFERENCE.md (7.4 KB)
+   └─ Three button patterns with code examples
+   └─ Copy-paste ready implementations
+   └─ State management code snippets
+   └─ Currency handling guide
+   └─ Best for: Implementation guide
+
+4. VISUAL_STRUCTURE.md (18 KB)
+   └─ Architecture diagrams (ASCII)
+   └─ Component tree visualization
+   └─ Data flow diagrams
+   └─ Button placement layouts
+   └─ Best for: Understanding structure
+
+═════════════════════════════════════════════════════════════════════════════════
+🎯 EXPLORATION SUMMARY
+═════════════════════════════════════════════════════════════════════════════════
+
+PROJECT: FinVault (Wealth Management App - React Native + Expo)
+FRAMEWORK: React Native + Expo Router + SQLite
+ARCHITECTURE: Drawer Navigation, Screen-based routes, Context + Zustand
+THEME: Material Design 3, Light/Dark mode support
+
+═════════════════════════════════════════════════════════════════════════════════
+✅ BUTTONS FOUND & DOCUMENTED
+═════════════════════════════════════════════════════════════════════════════════
+
+FLOATING ACTION BUTTONS (Bottom-Right, Primary)
+├─ [+ Add Asset]     → AssetsScreen.tsx:549-569
+│  └─ Pattern: FAB wrapped in BouncePressable
+│  └─ Navigation: Routes to /assets/add screen
+│  └─ Dynamic: Moves up when in select mode
+│
+└─ [+ Add Goal]      → GoalsDashboardScreen.tsx:657-668
+   └─ Pattern: Direct FAB (no wrapper)
+   └─ Opens: 3-step wizard dialog
+   └─ Positioning: Adapts to safe area insets
+
+HEADER BUTTONS (Top-Right, Secondary)
+├─ [Add] Insurance   → ProtectScreen.tsx:546-558
+│  └─ Pattern: Compact button with contained-tonal mode
+│  └─ Opens: Inline form dialog
+│  └─ Placement: Grouped with sort/filter
+│
+└─ [Import] Assets   → AssetsScreen.tsx:497-499
+   └─ Pattern: Text mode button
+   └─ Opens: 3-step CSV import modal
+   └─ Placement: Holdings header area
+
+MISSING IMPLEMENTATION
+└─ [+ Add Loan]      → ❌ Not yet implemented
+   └─ Status: Placeholder in navigation (empty directories)
+   └─ Location: src/app/liabilities/, src/screens/liabilities/
+
+═════════════════════════════════════════════════════════════════════════════════
+📋 IMPORT FUNCTIONALITY
+═════════════════════════════════════════════════════════════════════════════════
+
+COMPONENT: BulkImportModal.tsx (470+ lines)
+LOCATION: src/components/assets/BulkImportModal.tsx
+
+FEATURES:
+├─ Step 1: File Picker
+│  └─ DocumentPicker integration, CSV parsing
+├─ Step 2: Column Mapping
+│  └─ Auto-detection with 30+ column aliases
+│  └─ Preview of first 2 data rows
+└─ Step 3: Result Summary
+   └─ Import count, failure count with reasons
+
+REUSABLE FOR:
+├─ Insurance policies
+├─ Loans/Liabilities
+└─ Expenses
+
+═════════════════════════════════════════════════════════════════════════════════
+📁 KEY FILE LOCATIONS
+═════════════════════════════════════════════════════════════════════════════════
+
+SCREENS (Button Implementations)
+├─ src/screens/AssetsScreen.tsx             (2 buttons + import)
+├─ src/screens/goals/GoalsDashboardScreen.tsx (1 button + dialog)
+├─ src/screens/ProtectScreen.tsx            (1 button + dialog)
+└─ src/screens/liabilities/                 (EMPTY - needs implementation)
+
+COMPONENTS (Reusable UI)
+├─ src/components/BouncePressable.tsx       (haptic feedback wrapper)
+├─ src/components/assets/BulkImportModal.tsx (import functionality)
+└─ src/components/[goals|assets|...]/       (feature-specific components)
+
+ROUTING (App Structure)
+├─ src/app/_layout.tsx                      (drawer navigator, menu)
+├─ src/app/assets/index.tsx                 (export AssetsScreen)
+├─ src/app/goals/index.tsx                  (export GoalsDashboardScreen)
+├─ src/app/protect.tsx                      (export ProtectScreen)
+└─ src/app/liabilities/                     (EMPTY - needs export)
+
+DATABASE
+├─ src/db/index.ts                          (CRUD operations)
+├─ src/db/schema.ts                         (table definitions)
+└─ src/db/seed.ts                           (demo data)
+
+═════════════════════════════════════════════════════════════════════════════════
+🔧 THREE BUTTON PATTERNS
+═════════════════════════════════════════════════════════════════════════════════
+
+PATTERN 1: PRIMARY ACTION (FAB + Routing)
+└─ Used for: Asset creation
+├─ Component: <FAB> wrapped in <BouncePressable>
+├─ Position: Bottom-right, absolute
+├─ Action: Routes to separate screen
+└─ Example: "+ Add Asset"
+
+PATTERN 2: PRIMARY ACTION (FAB + Dialog)
+└─ Used for: Goal creation
+├─ Component: <FAB> (direct)
+├─ Position: Bottom-right, absolute, adapts to insets
+├─ Action: Opens multi-step dialog
+└─ Example: "+ Add Goal"
+
+PATTERN 3: SECONDARY ACTION (Header Button + Dialog)
+└─ Used for: Insurance, Import
+├─ Component: <Button> with mode="contained-tonal" or "text"
+├─ Position: Top-right, inline with filters
+├─ Action: Opens dialog or modal
+└─ Examples: "[Add]", "[Import]"
+
+═════════════════════════════════════════════════════════════════════════════════
+📊 FEATURE COMPLETION MATRIX
+═════════════════════════════════════════════════════════════════════════════════
+
+FULLY IMPLEMENTED (CRUD + Features)
+├─ ✅ Assets          (Create, Read, Update, Delete, Import, SIP)
+├─ ✅ Goals           (Create, Read, Update, Delete, Linking, Timeline)
+├─ ✅ Insurance       (Create, Read, Update, Delete, Search/Filter)
+└─ ✅ Vault           (Encryption, Password management)
+
+PARTIALLY IMPLEMENTED
+├─ ⚠️  Expenses        (Tracking, basic CRUD)
+└─ ⚠️  Reports         (Analytics, charts)
+
+NOT IMPLEMENTED
+└─ ❌ Loans/Liabilities (Placeholder route, no component)
+
+═════════════════════════════════════════════════════════════════════════════════
+💡 KEY INSIGHTS
+═════════════════════════════════════════════════════════════════════════════════
+
+DESIGN PATTERNS:
+├─ State: useState for local, Zustand for global, Context for app
+├─ Forms: Blank object template, set() helper function
+├─ Dialogs: Portal wrapper, controlled visibility
+├─ Database: Transaction pattern for batch operations
+├─ Currency: Paise storage (×100), formatted display (÷100)
+├─ Animations: Animated API with stagger, timing, spring
+└─ Positioning: Safe area insets for notch-safe placement
+
+STYLING:
+├─ Theme-aware: All colors from theme.colors
+├─ Material Design 3: Follow MD3 principles
+├─ Consistent: Primary for main, tonal for secondary, text for utility
+└─ Responsive: Works on all screen sizes, light/dark mode
+
+DATABASE:
+├─ SQLite: Synchronous queries in transactions
+├─ Naming: user_id links all records to user
+├─ Timestamps: ISO format with nowISO() function
+├─ IDs: Generated with newId() function
+└─ Relations: Foreign keys link related tables
+
+═════════════════════════════════════════════════════════════════════════════════
+🚀 NEXT STEPS
+═════════════════════════════════════════════════════════════════════════════════
+
+TO IMPLEMENT "+ ADD LOAN":
+1. Create src/screens/liabilities/LiabilitiesScreen.tsx
+2. Copy ProtectScreen structure as template
+3. Use header button pattern (not FAB)
+4. Create loan form dialog with loan-specific fields
+5. Add database schema in src/db/schema.ts
+6. Export from src/app/liabilities/index.tsx
+7. Update drawer menu in src/app/_layout.tsx (if needed)
+
+TO ADD IMPORT TO OTHER FEATURES:
+1. Parameterize BulkImportModal component
+2. Extract field configuration logic
+3. Add feature-specific field mappings
+4. Reuse in insurance, loans, expenses
+
+═════════════════════════════════════════════════════════════════════════════════
+📖 HOW TO USE THIS DOCUMENTATION
+═════════════════════════════════════════════════════════════════════════════════
+
+FOR QUICK ORIENTATION:
+→ Start with README_EXPLORATION.md
+→ Read "Key Findings" section
+→ Check "Quick Start for New Developers"
+
+FOR IMPLEMENTATION:
+→ Use BUTTON_IMPLEMENTATION_REFERENCE.md
+→ Copy code examples and patterns
+→ Follow the implementation checklist
+
+FOR UNDERSTANDING ARCHITECTURE:
+→ Read VISUAL_STRUCTURE.md
+→ Look at component tree diagrams
+→ Review data flow diagrams
+
+FOR DEEP TECHNICAL DETAILS:
+→ Use CODEBASE_EXPLORATION.md
+→ Find specific line numbers
+→ Cross-reference with actual files
+
+═════════════════════════════════════════════════════════════════════════════════
+📊 EXPLORATION STATISTICS
+═════════════════════════════════════════════════════════════════════════════════
+
+Documentation Generated:
+├─ 4 comprehensive markdown files
+├─ 1,551+ lines of documentation
+├─ 45+ KB total content
+├─ 100+ code examples
+└─ 30+ diagrams and tables
+
+Code Analyzed:
+├─ 8 main screens reviewed
+├─ 20+ components examined
+├─ 4 button implementations found
+├─ 1 import system fully documented
+├─ 10+ database tables understood
+
+Time Investment:
+└─ Very thorough exploration for complete understanding
+
+═════════════════════════════════════════════════════════════════════════════════
+
+✨ Exploration Complete - All Key Areas Documented ✨
+
+Questions? Check the specific documentation file recommended for your use case.
+For line-specific code locations, refer to CODEBASE_EXPLORATION.md.
+
+═════════════════════════════════════════════════════════════════════════════════

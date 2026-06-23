@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+import BouncePressable from '../../components/BouncePressable';
 import { useApp } from '../../context/AppContext';
 import { useDataSafe } from '../../hooks/useData';
 import { all, insert, newId, remove } from '../../db';
@@ -654,10 +655,7 @@ const GoalsDashboardScreen: React.FC = () => {
         )}
       </Screen>
 
-      <FAB
-        icon="plus"
-        label="Add Goal"
-        style={{ position: 'absolute', right: 16, bottom: Math.max(insets.bottom, 16) + 16 }}
+      <BouncePressable
         onPress={() => {
           setForm({ ...blank });
           setLinks({});
@@ -665,7 +663,25 @@ const GoalsDashboardScreen: React.FC = () => {
           setStep(1);
           setAddOpen(true);
         }}
-      />
+        style={{
+          position: 'absolute',
+          right: 16,
+          bottom: Math.max(insets.bottom, 16) + 16,
+          zIndex: 10,
+        }}
+      >
+        <FAB
+          icon="plus"
+          label="Add Goal"
+          style={{
+            backgroundColor: theme.colors.primary,
+            borderRadius: 28,
+            elevation: 4,
+          }}
+          color={theme.colors.onPrimary}
+          pointerEvents="none"
+        />
+      </BouncePressable>
 
       <Portal>
         <Dialog visible={addOpen} onDismiss={() => { setAddOpen(false); setStep(1); }} style={{ maxHeight: '85%', borderRadius: theme.roundness || 12 }}>

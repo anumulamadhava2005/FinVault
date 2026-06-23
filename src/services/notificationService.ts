@@ -142,6 +142,46 @@ export const generateAssetNotifications = (userId: string): void => {
   }
 };
 
+// ─── Expense budget notifications ───────────────────────────────────────────
+
+export const generateExpenseNotifications = (
+  userId: string,
+  year: number,
+  month: number,
+): void => {
+  const categories = all<{ id: string; name: string; budget_amount: number }>(
+    'SELECT id, name, budget_amount FROM expense_categories WHERE (user_id = ? OR is_system = 1) AND budget_amount > 0',
+    [userId],
+  );
+
+  if (!categories.length) return;
+
+  const monthStr = String(month).padStart(2, '0');
+  const prefix = `${year}-${monthStr}`;
+
+  const totals = all<{ category_id: string; total: number }>(
+    `SELECT category_id, SUM(amount) AS total
+     FROM expenses
+     WHERE user_id = ? AND expense_date LIKE ?
+     GROUP BY category_id`,
+    [userId, `${prefix}%`],
+  );
+
+  const totalMap = new Map(totals.map((t) => [t.category_id, t.total]));
+
+  for (const cat of categories) {
+    const spent = totalMap.get(cat.id) ?? 0;
+    if (spent <= cat.budget_amount) continue;
+    const excess = spent - cat.budget_amount;
+    notify(
+      userId,
+      `${cat.name} budget exceeded`,
+      `${cat.name} budget exceeded by ${formatINR(excess)} this month.`,
+      'budget_exceeded',
+    );
+  }
+};
+
 // ─── Goal-related notifications ─────────────────────────────────────────────
 
 export const generateGoalNotifications = (userId: string): void => {
