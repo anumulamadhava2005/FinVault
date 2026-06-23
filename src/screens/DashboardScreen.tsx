@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useNavigation } from 'expo-router';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, Animated, Easing, ScrollView, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Easing, Pressable, ScrollView, TouchableOpacity, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,6 +27,7 @@ import { generateAllNotifications } from '../services/notificationService';
 import { captureNetWorthSnapshot } from '../services/wealthRecap';
 import { refreshMarketData } from '../services/marketFeeds';
 import { runLifecycleSweeps } from '../services/lifecycle';
+import { todayMovers, marketHoldings, refreshAssetMarket } from '../services/assetMarket';
 import { chartColors, palette, statusColor } from '../theme';
 import { addMonths, localISODate, parseISO } from '../utils/date';
 import { formatINR, formatINRCompact, scoreColor } from '../utils/money';
@@ -96,10 +97,13 @@ const DashboardScreen: React.FC = () => {
     return null;
   });
 
-  // Keep the live market snapshot warm for the Insights/Feed screens.
+  // Keep the live market snapshot + per-asset day-change/series warm. Refresh
+  // once when asset data lands so today's gain/loss and movers populate.
   useEffect(() => {
     refreshMarketData().catch(() => { /* offline — cached values are used */ });
-  }, []);
+    refreshAssetMarket(userId!).then(() => refresh()).catch(() => { /* offline */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // Process automatic lifecycle events (maturities, loan closures, goal
   // completions) on load; refresh once if anything moved to history.
@@ -134,6 +138,8 @@ const DashboardScreen: React.FC = () => {
   const goals = useData(() => goalsProgress(userId!));
   const upcoming = useData(() => upcomingSips(userId!));
   const insights = useData(() => spendingInsights(userId!));
+  const movers = useData(() => todayMovers(userId!));
+  const holdings = useData(() => marketHoldings(userId!));
 
   // Staggered entry animations for 10 main section items
   const anims = useRef(Array.from({ length: 10 }, () => new Animated.Value(0))).current;
@@ -293,6 +299,101 @@ const DashboardScreen: React.FC = () => {
         contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
         keyboardShouldPersistTaps="handled"
       >
+        {/* ================= TODAY ================= */}
+        {(() => {
+          const up = movers.todayChange >= 0;
+          const c = up ? palette.good : palette.danger;
+          return (
+            <SectionCard style={{ marginBottom: 16 }}>
+              <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', letterSpacing: 0.5 }}>
+                PORTFOLIO VALUE · TODAY
+              </Text>
+              <Text style={{ fontSize: 32, fontWeight: '900', color: theme.colors.onSurface, letterSpacing: -0.8, marginTop: 4, fontVariant: ['tabular-nums'] }}>
+                {formatINR(movers.totalValue)}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                <MaterialCommunityIcons name={up ? 'arrow-up-bold' : 'arrow-down-bold'} size={18} color={c} />
+                <Text style={{ color: c, fontWeight: '800', fontSize: 16 }}>
+                  {up ? '+' : ''}{formatINR(movers.todayChange)} ({up ? '+' : ''}{movers.todayChangePct}%)
+                </Text>
+                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>today</Text>
+              </View>
+              {!movers.haveData && (
+                <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 6 }}>
+                  Fetching live prices… today's movement appears once quotes load.
+                </Text>
+              )}
+            </SectionCard>
+          );
+        })()}
+
+        {/* ================= TOP MOVERS ================= */}
+        {(movers.gainers.length > 0 || movers.losers.length > 0) && (
+          <SectionCard title="Top Movers Today" style={{ marginBottom: 16 }}>
+            <Row gap={16}>
+              <View style={{ flex: 1 }}>
+                <Text variant="labelSmall" style={{ color: palette.good, fontWeight: '800', marginBottom: 6 }}>TOP GAINERS</Text>
+                {movers.gainers.length === 0 ? (
+                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>—</Text>
+                ) : movers.gainers.map((m) => (
+                  <Pressable key={m.id} onPress={() => router.push(`/assets/${m.id}/analysis` as any)} style={{ paddingVertical: 4 }}>
+                    <Text variant="bodySmall" numberOfLines={1} style={{ fontWeight: '600', color: theme.colors.onSurface }}>{m.name}</Text>
+                    <Text variant="labelSmall" style={{ color: palette.good, fontWeight: '700' }}>+{m.pct}% · +{formatINRCompact(m.change)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text variant="labelSmall" style={{ color: palette.danger, fontWeight: '800', marginBottom: 6 }}>TOP LOSERS</Text>
+                {movers.losers.length === 0 ? (
+                  <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>—</Text>
+                ) : movers.losers.map((m) => (
+                  <Pressable key={m.id} onPress={() => router.push(`/assets/${m.id}/analysis` as any)} style={{ paddingVertical: 4 }}>
+                    <Text variant="bodySmall" numberOfLines={1} style={{ fontWeight: '600', color: theme.colors.onSurface }}>{m.name}</Text>
+                    <Text variant="labelSmall" style={{ color: palette.danger, fontWeight: '700' }}>{m.pct}% · {formatINRCompact(m.change)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Row>
+          </SectionCard>
+        )}
+
+        {/* ================= STOCKS & FUNDS ================= */}
+        <SectionCard title="Your Stocks & Funds" style={{ marginBottom: 24 }}>
+          {holdings.length === 0 ? (
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+              Add mutual funds or stocks to track them here and tap for a deep-dive analysis.
+            </Text>
+          ) : (
+            holdings.map((h, i) => {
+              const up = h.change >= 0;
+              const c = up ? palette.good : palette.danger;
+              return (
+                <Pressable
+                  key={h.id}
+                  onPress={() => router.push(`/assets/${h.id}/analysis` as any)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
+                    borderTopWidth: i === 0 ? 0 : 1, borderTopColor: theme.colors.outlineVariant,
+                  }}
+                >
+                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: theme.colors.surfaceVariant, alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialCommunityIcons name={h.slug === 'equity' ? 'chart-line' : 'chart-areaspline'} size={18} color={theme.colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="bodyMedium" numberOfLines={1} style={{ fontWeight: '700', color: theme.colors.onSurface }}>{h.name}</Text>
+                    <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>{h.type_name}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text variant="bodyMedium" style={{ fontWeight: '800', color: theme.colors.onSurface, fontVariant: ['tabular-nums'] }}>{formatINR(h.current)}</Text>
+                    <Text variant="labelSmall" style={{ color: c, fontWeight: '700' }}>{up ? '+' : ''}{h.pct}% today</Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.onSurfaceVariant} />
+                </Pressable>
+              );
+            })
+          )}
+        </SectionCard>
+
         {/* ================= HERO GROUP ================= */}
         {/* 0. Net Worth Card */}
         <Animated.View style={getAnimatedStyle(0)}>
