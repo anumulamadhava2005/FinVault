@@ -37,6 +37,7 @@ const COLUMN_MIGRATIONS = [
   "ALTER TABLE user_preferences ADD COLUMN vault_lock_mode TEXT NOT NULL DEFAULT 'password'",
   'ALTER TABLE expenses ADD COLUMN bill_uri TEXT',
   'ALTER TABLE asset_images ADD COLUMN local_path TEXT',
+  'ALTER TABLE loans ADD COLUMN details_json TEXT',
 ];
 
 // Idempotent data fixes that run on every startup to correct existing databases.

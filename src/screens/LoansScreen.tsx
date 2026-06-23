@@ -16,6 +16,7 @@ import {
   HelperText,
   Divider,
   Searchbar,
+  Switch,
 } from 'react-native-paper';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -23,12 +24,13 @@ import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BouncePressable from '../components/BouncePressable';
 import NotificationBell from '../components/NotificationBell';
+import ThemeToggle from '../components/ThemeToggle';
 import AttachmentsSection from '../components/AttachmentsSection';
 import type { PickedAttachment } from '../services/attachments';
 
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
-import { all, insert, newId, remove, run } from '../db';
+import { all, insert, newId, remove, run, update } from '../db';
 import type { Loan } from '../models/types';
 import {
   loanStatus,
@@ -48,10 +50,13 @@ const STATUS_TONE: Record<string, 'good' | 'warn' | 'bad'> = {
   active: 'good',
   overdue: 'bad',
   defaulted: 'bad',
+  blocked: 'bad',
   closed: 'warn',
 };
 
 const INTEREST_TYPES = ['fixed', 'floating', 'hybrid'];
+const LOAN_STATUSES = ['active', 'closed', 'defaulted'];
+const CARD_STATUSES = ['active', 'closed', 'blocked'];
 
 const blank = {
   loan_type: 'home',
@@ -67,6 +72,17 @@ const blank = {
   next_due_date: '',
   interest_type: 'fixed',
   notes: '',
+  status: 'active',
+  // Optional details (normal loans)
+  processing_fee: '',
+  collateral_type: '',
+  co_applicant: '',
+  auto_debit: false,
+  // Credit card specific
+  card_name: '',
+  card_last4: '',
+  min_due: '',
+  auto_pay: false,
 };
 
 const LoansScreen: React.FC = () => {
@@ -89,6 +105,7 @@ const LoansScreen: React.FC = () => {
     navigation.setOptions({
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          <ThemeToggle color={theme.colors.onSurface} />
           <NotificationBell
             kinds={['emi_due', 'emi_overdue']}
             color={theme.colors.onSurface}
@@ -107,6 +124,7 @@ const LoansScreen: React.FC = () => {
   const [loanAttachments, setLoanAttachments] = useState<PickedAttachment[]>([]);
   const [typeMenu, setTypeMenu] = useState(false);
   const [intTypeMenu, setIntTypeMenu] = useState(false);
+  const [statusMenu, setStatusMenu] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -127,11 +145,56 @@ const LoansScreen: React.FC = () => {
   const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
   const [snackMsg, setSnackMsg] = useState<string | null>(null);
 
-  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+    setForm((f) => ({ ...f, [k]: v }));
   const toggleExpand = (id: string) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
+
+  const isCreditCard = form.loan_type === 'credit_card';
+
+  // Section heading inside the single-column Add/Edit Loan form.
+  const heading = (t: string) => (
+    <Text
+      variant="labelSmall"
+      style={{ color: theme.colors.primary, fontWeight: '800', letterSpacing: 0.8, marginTop: 16, marginBottom: 6 }}
+    >
+      {t}
+    </Text>
+  );
+
+  // A labelled on/off toggle row (Auto Debit / Auto-Pay).
+  const toggleRow = (label: string, value: boolean, onToggle: (v: boolean) => void) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, marginBottom: 4 }}>
+      <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>{label}</Text>
+      <Switch value={value} onValueChange={onToggle} />
+    </View>
+  );
+
+  const statusOptions = isCreditCard ? CARD_STATUSES : LOAN_STATUSES;
+
+  // Available Credit = Credit Limit − Current Outstanding (display only).
+  const availableCredit = Math.max(
+    0,
+    (parseFloat(form.original_amount) || 0) - (parseFloat(form.outstanding_amount) || 0),
+  );
 
   const save = () => {
     if (!form.original_amount.trim() || !form.outstanding_amount.trim()) return;
+
+    // Map both normal and credit-card forms onto the shared `loans` columns.
+    // Type-specific extras live in `details_json`, mirroring the assets pattern.
+    const details: Record<string, unknown> = {};
+    if (isCreditCard) {
+      if (form.card_name.trim()) details.card_name = form.card_name.trim();
+      if (form.card_last4.trim()) details.card_last4 = form.card_last4.trim();
+      if (form.min_due.trim()) details.min_due = rupeesToPaise(form.min_due);
+      details.auto_pay = form.auto_pay;
+    } else {
+      if (form.processing_fee.trim()) details.processing_fee = rupeesToPaise(form.processing_fee);
+      if (form.collateral_type.trim()) details.collateral_type = form.collateral_type.trim();
+      if (form.co_applicant.trim()) details.co_applicant = form.co_applicant.trim();
+      details.auto_debit = form.auto_debit;
+    }
+    const detailsJson = Object.keys(details).length ? JSON.stringify(details) : null;
 
     const data = {
       loan_type: form.loan_type,
@@ -142,27 +205,17 @@ const LoansScreen: React.FC = () => {
       outstanding_amount: rupeesToPaise(form.outstanding_amount || '0'),
       interest_rate: parseFloat(form.interest_rate) || 0,
       emi_amount: rupeesToPaise(form.emi_amount || '0'),
-      start_date: form.start_date.trim() || null,
-      end_date: form.end_date.trim() || null,
+      start_date: isCreditCard ? null : (form.start_date.trim() || null),
+      end_date: isCreditCard ? null : (form.end_date.trim() || null),
       next_due_date: form.next_due_date.trim() || null,
-      interest_type: form.interest_type || null,
+      interest_type: isCreditCard ? null : (form.interest_type || null),
+      status: form.status || 'active',
+      details_json: detailsJson,
       notes: form.notes.trim() || null,
     };
 
     if (editLoanId) {
-      run(
-        `UPDATE loans SET
-          loan_type=?, provider=?, account_number=?, borrower_name=?,
-          original_amount=?, outstanding_amount=?, interest_rate=?, emi_amount=?,
-          start_date=?, end_date=?, next_due_date=?, interest_type=?, notes=?
-         WHERE id=?`,
-        [
-          data.loan_type, data.provider, data.account_number, data.borrower_name,
-          data.original_amount, data.outstanding_amount, data.interest_rate, data.emi_amount,
-          data.start_date, data.end_date, data.next_due_date, data.interest_type, data.notes,
-          editLoanId,
-        ],
-      );
+      update('loans', editLoanId, data);
       setEditLoanId(null);
     } else {
       const loanId = newId();
@@ -172,7 +225,6 @@ const LoansScreen: React.FC = () => {
         user_id: userId!,
         ...data,
         prepayment_total: 0,
-        status: 'active',
         created_at: now,
       });
       // Persist attachments collected in the form now that the loan row exists.
@@ -630,6 +682,8 @@ const LoansScreen: React.FC = () => {
                           title="Edit"
                           onPress={() => {
                             setMenuLoanId(null);
+                            let d: Record<string, any> = {};
+                            try { d = l.details_json ? JSON.parse(l.details_json) : {}; } catch { d = {}; }
                             setForm({
                               loan_type: l.loan_type,
                               provider: l.provider || '',
@@ -638,12 +692,21 @@ const LoansScreen: React.FC = () => {
                               original_amount: String(l.original_amount / 100),
                               outstanding_amount: String(l.outstanding_amount / 100),
                               interest_rate: String(l.interest_rate),
-                              emi_amount: String(l.emi_amount / 100),
+                              emi_amount: l.emi_amount ? String(l.emi_amount / 100) : '',
                               start_date: l.start_date || '',
                               end_date: l.end_date || '',
                               next_due_date: l.next_due_date || '',
                               interest_type: l.interest_type || 'fixed',
                               notes: l.notes || '',
+                              status: l.status || 'active',
+                              processing_fee: d.processing_fee != null ? String(d.processing_fee / 100) : '',
+                              collateral_type: d.collateral_type || '',
+                              co_applicant: d.co_applicant || '',
+                              auto_debit: !!d.auto_debit,
+                              card_name: d.card_name || '',
+                              card_last4: d.card_last4 || '',
+                              min_due: d.min_due != null ? String(d.min_due / 100) : '',
+                              auto_pay: !!d.auto_pay,
                             });
                             setEditLoanId(l.id);
                             setAddOpen(true);
@@ -797,12 +860,13 @@ const LoansScreen: React.FC = () => {
         >
           <Dialog.Title>{editLoanId ? 'Edit Loan' : 'Add Loan'}</Dialog.Title>
           <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}>
-            {/* Loan Type */}
+            {/* Loan Type — drives the dynamic form below */}
+            {heading('LOAN TYPE')}
             <Menu
               visible={typeMenu}
               onDismiss={() => setTypeMenu(false)}
               anchor={
-                <Button mode="outlined" onPress={() => setTypeMenu(true)} style={{ marginBottom: 8 }}>
+                <Button mode="outlined" onPress={() => setTypeMenu(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }} contentStyle={{ justifyContent: 'flex-start' }}>
                   {LOAN_TYPE_LABELS[form.loan_type] || 'Select Type'}
                 </Button>
               }
@@ -812,64 +876,126 @@ const LoansScreen: React.FC = () => {
               ))}
             </Menu>
 
-            <TextInput label="Provider / Bank" value={form.provider} onChangeText={(v) => set('provider', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
-            <TextInput label="Account Number" value={form.account_number} onChangeText={(v) => set('account_number', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
-            <TextInput label="Borrower Name" value={form.borrower_name} onChangeText={(v) => set('borrower_name', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+            {isCreditCard ? (
+              <>
+                {/* ===== Credit Card Debt — dedicated form ===== */}
+                {heading('BASIC INFORMATION')}
+                <TextInput label="Card Issuer / Bank" value={form.provider} onChangeText={(v) => set('provider', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="Card Name" value={form.card_name} onChangeText={(v) => set('card_name', v)} mode="outlined" dense style={{ marginBottom: 8 }} placeholder="e.g. Amazon Pay ICICI" />
+                <TextInput label="Last 4 Digits of Card" value={form.card_last4} onChangeText={(v) => set('card_last4', v.replace(/[^0-9]/g, '').slice(0, 4))} keyboardType="numeric" maxLength={4} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="Card Holder Name" value={form.borrower_name} onChangeText={(v) => set('borrower_name', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
 
-            <TextInput
-              label="Loan Amount (₹) *"
-              keyboardType="numeric"
-              value={form.original_amount}
-              onChangeText={(v) => set('original_amount', v)}
-              mode="outlined" dense style={{ marginBottom: 8 }}
-            />
-            <TextInput
-              label="Outstanding Amount (₹) *"
-              keyboardType="numeric"
-              value={form.outstanding_amount}
-              onChangeText={(v) => set('outstanding_amount', v)}
-              mode="outlined" dense style={{ marginBottom: 8 }}
-            />
-            <TextInput
-              label="EMI Amount (₹)"
-              keyboardType="numeric"
-              value={form.emi_amount}
-              onChangeText={(v) => set('emi_amount', v)}
-              mode="outlined" dense style={{ marginBottom: 8 }}
-            />
-            <TextInput
-              label="Interest Rate (%)"
-              keyboardType="numeric"
-              value={form.interest_rate}
-              onChangeText={(v) => set('interest_rate', v)}
-              mode="outlined" dense style={{ marginBottom: 8 }}
-              placeholder="e.g. 8.5"
-            />
+                {heading('DEBT DETAILS')}
+                <TextInput label="Credit Limit (₹) *" keyboardType="numeric" value={form.original_amount} onChangeText={(v) => set('original_amount', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="Current Outstanding Balance (₹) *" keyboardType="numeric" value={form.outstanding_amount} onChangeText={(v) => set('outstanding_amount', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput
+                  label="Available Credit (₹)"
+                  value={availableCredit.toLocaleString('en-IN')}
+                  editable={false}
+                  mode="outlined"
+                  dense
+                  style={{ marginBottom: 8, backgroundColor: theme.colors.surfaceVariant, opacity: 0.85 }}
+                  right={<TextInput.Icon icon="calculator-variant-outline" />}
+                />
 
-            {/* Interest Type */}
-            <Menu
-              visible={intTypeMenu}
-              onDismiss={() => setIntTypeMenu(false)}
-              anchor={
-                <Button mode="outlined" onPress={() => setIntTypeMenu(true)} style={{ marginBottom: 8 }}>
-                  {form.interest_type ? titleCase(form.interest_type) : 'Interest Type'}
+                {heading('ADDITIONAL FIELDS')}
+                <TextInput label="Interest Rate (%)" keyboardType="numeric" value={form.interest_rate} onChangeText={(v) => set('interest_rate', v)} mode="outlined" dense style={{ marginBottom: 8 }} placeholder="e.g. 42" />
+                <TextInput label="Minimum Due Amount (₹)" keyboardType="numeric" value={form.min_due} onChangeText={(v) => set('min_due', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="EMI Amount (₹) — optional" keyboardType="numeric" value={form.emi_amount} onChangeText={(v) => set('emi_amount', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+
+                {heading('DATES')}
+                <Button mode="outlined" onPress={() => setShowDueDatePicker(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }}>
+                  {form.next_due_date ? `Payment Due Date: ${form.next_due_date}` : 'Set Payment Due Date'}
                 </Button>
-              }
-            >
-              {INTEREST_TYPES.map((t) => (
-                <Menu.Item key={t} title={titleCase(t)} onPress={() => { set('interest_type', t); setIntTypeMenu(false); }} />
-              ))}
-            </Menu>
+                {form.next_due_date ? (
+                  <Button compact textColor={palette.danger} onPress={() => set('next_due_date', '')} style={{ marginBottom: 8, alignSelf: 'flex-start' }}>Clear Due Date</Button>
+                ) : null}
 
-            {/* Start Date */}
-            <Button mode="outlined" onPress={() => setShowStartDatePicker(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }}>
-              {form.start_date ? `Start Date: ${form.start_date}` : 'Set Start Date (optional)'}
-            </Button>
-            {form.start_date ? (
-              <Button compact textColor={palette.danger} onPress={() => set('start_date', '')} style={{ marginBottom: 8, alignSelf: 'flex-start' }}>
-                Clear Start Date
-              </Button>
-            ) : null}
+                {heading('STATUS')}
+                {toggleRow('Auto-Pay Enabled', form.auto_pay, (v) => set('auto_pay', v))}
+                <Menu
+                  visible={statusMenu}
+                  onDismiss={() => setStatusMenu(false)}
+                  anchor={
+                    <Button mode="outlined" onPress={() => setStatusMenu(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }} contentStyle={{ justifyContent: 'flex-start' }}>
+                      {`Status: ${titleCase(form.status)}`}
+                    </Button>
+                  }
+                >
+                  {statusOptions.map((s) => (
+                    <Menu.Item key={s} title={titleCase(s)} onPress={() => { set('status', s); setStatusMenu(false); }} />
+                  ))}
+                </Menu>
+              </>
+            ) : (
+              <>
+                {/* ===== Normal loan — categorized form ===== */}
+                {heading('BASIC INFORMATION')}
+                <TextInput label="Loan Provider / Bank" value={form.provider} onChangeText={(v) => set('provider', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="Loan Account Number" value={form.account_number} onChangeText={(v) => set('account_number', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="Borrower Name" value={form.borrower_name} onChangeText={(v) => set('borrower_name', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+
+                {heading('AMOUNTS & EMI')}
+                <TextInput label="Original Loan Amount (₹) *" keyboardType="numeric" value={form.original_amount} onChangeText={(v) => set('original_amount', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="Outstanding Amount (₹) *" keyboardType="numeric" value={form.outstanding_amount} onChangeText={(v) => set('outstanding_amount', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="Interest Rate (%)" keyboardType="numeric" value={form.interest_rate} onChangeText={(v) => set('interest_rate', v)} mode="outlined" dense style={{ marginBottom: 8 }} placeholder="e.g. 8.5" />
+                <TextInput label="EMI Amount (₹)" keyboardType="numeric" value={form.emi_amount} onChangeText={(v) => set('emi_amount', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <Menu
+                  visible={intTypeMenu}
+                  onDismiss={() => setIntTypeMenu(false)}
+                  anchor={
+                    <Button mode="outlined" onPress={() => setIntTypeMenu(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }} contentStyle={{ justifyContent: 'flex-start' }}>
+                      {form.interest_type ? `Interest Type: ${titleCase(form.interest_type)}` : 'Interest Type'}
+                    </Button>
+                  }
+                >
+                  {INTEREST_TYPES.map((t) => (
+                    <Menu.Item key={t} title={titleCase(t)} onPress={() => { set('interest_type', t); setIntTypeMenu(false); }} />
+                  ))}
+                </Menu>
+
+                {heading('DATES')}
+                <Button mode="outlined" onPress={() => setShowStartDatePicker(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }}>
+                  {form.start_date ? `Start Date: ${form.start_date}` : 'Set Loan Start Date'}
+                </Button>
+                {form.start_date ? (
+                  <Button compact textColor={palette.danger} onPress={() => set('start_date', '')} style={{ marginBottom: 8, alignSelf: 'flex-start' }}>Clear Start Date</Button>
+                ) : null}
+                <Button mode="outlined" onPress={() => setShowEndDatePicker(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }}>
+                  {form.end_date ? `End Date: ${form.end_date}` : 'Set Loan End Date'}
+                </Button>
+                {form.end_date ? (
+                  <Button compact textColor={palette.danger} onPress={() => set('end_date', '')} style={{ marginBottom: 8, alignSelf: 'flex-start' }}>Clear End Date</Button>
+                ) : null}
+                <Button mode="outlined" onPress={() => setShowDueDatePicker(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }}>
+                  {form.next_due_date ? `Next EMI Due: ${form.next_due_date}` : 'Set Next EMI Due'}
+                </Button>
+                {form.next_due_date ? (
+                  <Button compact textColor={palette.danger} onPress={() => set('next_due_date', '')} style={{ marginBottom: 8, alignSelf: 'flex-start' }}>Clear Due Date</Button>
+                ) : null}
+
+                {heading('OPTIONAL DETAILS')}
+                <TextInput label="Processing Fee (₹)" keyboardType="numeric" value={form.processing_fee} onChangeText={(v) => set('processing_fee', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <TextInput label="Collateral Type" value={form.collateral_type} onChangeText={(v) => set('collateral_type', v)} mode="outlined" dense style={{ marginBottom: 8 }} placeholder="e.g. Property, Gold, None" />
+                <TextInput label="Co-applicant" value={form.co_applicant} onChangeText={(v) => set('co_applicant', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+                <Menu
+                  visible={statusMenu}
+                  onDismiss={() => setStatusMenu(false)}
+                  anchor={
+                    <Button mode="outlined" onPress={() => setStatusMenu(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }} contentStyle={{ justifyContent: 'flex-start' }}>
+                      {`Status: ${titleCase(form.status)}`}
+                    </Button>
+                  }
+                >
+                  {statusOptions.map((s) => (
+                    <Menu.Item key={s} title={titleCase(s)} onPress={() => { set('status', s); setStatusMenu(false); }} />
+                  ))}
+                </Menu>
+                {toggleRow('Auto Debit Enabled', form.auto_debit, (v) => set('auto_debit', v))}
+              </>
+            )}
+
+            {/* Shared date pickers (toggled from the buttons above) */}
             {showStartDatePicker && (
               <DateTimePicker
                 value={form.start_date ? new Date(form.start_date + 'T00:00:00') : new Date()}
@@ -877,16 +1003,6 @@ const LoansScreen: React.FC = () => {
                 onChange={(_e, d) => { setShowStartDatePicker(false); if (d) set('start_date', d.toISOString().slice(0, 10)); }}
               />
             )}
-
-            {/* End Date */}
-            <Button mode="outlined" onPress={() => setShowEndDatePicker(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }}>
-              {form.end_date ? `End Date: ${form.end_date}` : 'Set End Date (optional)'}
-            </Button>
-            {form.end_date ? (
-              <Button compact textColor={palette.danger} onPress={() => set('end_date', '')} style={{ marginBottom: 8, alignSelf: 'flex-start' }}>
-                Clear End Date
-              </Button>
-            ) : null}
             {showEndDatePicker && (
               <DateTimePicker
                 value={form.end_date ? new Date(form.end_date + 'T00:00:00') : new Date()}
@@ -894,16 +1010,6 @@ const LoansScreen: React.FC = () => {
                 onChange={(_e, d) => { setShowEndDatePicker(false); if (d) set('end_date', d.toISOString().slice(0, 10)); }}
               />
             )}
-
-            {/* Next Due Date */}
-            <Button mode="outlined" onPress={() => setShowDueDatePicker(true)} style={{ marginBottom: 8, borderRadius: theme.roundness }}>
-              {form.next_due_date ? `Next Due: ${form.next_due_date}` : 'Set Next Due Date (optional)'}
-            </Button>
-            {form.next_due_date ? (
-              <Button compact textColor={palette.danger} onPress={() => set('next_due_date', '')} style={{ marginBottom: 8, alignSelf: 'flex-start' }}>
-                Clear Due Date
-              </Button>
-            ) : null}
             {showDueDatePicker && (
               <DateTimePicker
                 value={form.next_due_date ? new Date(form.next_due_date + 'T00:00:00') : new Date()}
@@ -912,7 +1018,8 @@ const LoansScreen: React.FC = () => {
               />
             )}
 
-            <TextInput label="Notes" value={form.notes} onChangeText={(v) => set('notes', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+            {heading('ADDITIONAL INFORMATION')}
+            <TextInput label="Notes" value={form.notes} onChangeText={(v) => set('notes', v)} mode="outlined" dense multiline numberOfLines={2} style={{ marginBottom: 8 }} />
 
             {/* Attachments (Sanction Letter, Repayment Schedule, EMI documents…) */}
             <View style={{ marginTop: 8, marginBottom: 4 }}>
@@ -933,7 +1040,9 @@ const LoansScreen: React.FC = () => {
             </View>
 
             <HelperText type={form.original_amount.trim() && form.outstanding_amount.trim() ? 'info' : 'error'} visible>
-              Loan Amount and Outstanding Amount are required.
+              {isCreditCard
+                ? 'Credit Limit and Current Outstanding Balance are required.'
+                : 'Loan Amount and Outstanding Amount are required.'}
             </HelperText>
           </ScrollView>
           <Dialog.Actions>

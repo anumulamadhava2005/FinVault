@@ -23,6 +23,7 @@ import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BouncePressable from '../components/BouncePressable';
 import NotificationBell from '../components/NotificationBell';
+import ThemeToggle from '../components/ThemeToggle';
 import AttachmentsSection from '../components/AttachmentsSection';
 import type { PickedAttachment } from '../services/attachments';
 
@@ -83,6 +84,7 @@ const ProtectScreen: React.FC = () => {
     navigation.setOptions({
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          <ThemeToggle color={theme.colors.onSurface} />
           <NotificationBell
             kinds={['premium_due', 'policy_expiring', 'policy_expired']}
             color={theme.colors.onSurface}

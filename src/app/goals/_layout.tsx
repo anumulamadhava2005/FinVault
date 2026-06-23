@@ -1,9 +1,10 @@
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Stack, useNavigation } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '@/context/AppContext';
 import { darkTheme, lightTheme } from '@/theme';
 import NotificationBell from '@/components/NotificationBell';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function GoalsLayout() {
   const { isDark } = useApp();
@@ -28,10 +29,13 @@ export default function GoalsLayout() {
             </Pressable>
           ),
           headerRight: () => (
-            <NotificationBell
-              color={theme.colors.onSurface}
-              kinds={['goal_completed', 'goal_deadline', 'goal_behind', 'goal_overdue']}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ThemeToggle color={theme.colors.onSurface} />
+              <NotificationBell
+                color={theme.colors.onSurface}
+                kinds={['goal_completed', 'goal_deadline', 'goal_behind', 'goal_overdue']}
+              />
+            </View>
           ),
         }}
       />

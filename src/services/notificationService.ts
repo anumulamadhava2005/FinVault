@@ -248,6 +248,7 @@ const LOAN_TYPE_LABELS: Record<string, string> = {
   credit_card: 'Credit card',
   gold: 'Gold loan',
   business: 'Business loan',
+  lap: 'Loan against property',
   other: 'Loan',
 };
 

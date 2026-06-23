@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS loans (
   notes TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   interest_type TEXT,
+  details_json TEXT,
   created_at TEXT NOT NULL
 );
 

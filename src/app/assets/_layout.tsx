@@ -1,9 +1,10 @@
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Stack, useNavigation } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '@/context/AppContext';
 import { darkTheme, lightTheme } from '@/theme';
 import NotificationBell from '@/components/NotificationBell';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function AssetsLayout() {
   const { isDark } = useApp();
@@ -28,10 +29,13 @@ export default function AssetsLayout() {
             </Pressable>
           ),
           headerRight: () => (
-            <NotificationBell
-              color={theme.colors.onSurface}
-              kinds={['sip_due', 'asset_gain', 'asset_loss', 'stale_price']}
-            />
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ThemeToggle color={theme.colors.onSurface} />
+              <NotificationBell
+                color={theme.colors.onSurface}
+                kinds={['sip_due', 'asset_gain', 'asset_loss', 'stale_price']}
+              />
+            </View>
           ),
         }}
       />

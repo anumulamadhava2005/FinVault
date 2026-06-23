@@ -2,13 +2,14 @@
 
 export const LOAN_TYPES: [string, string][] = [
   ['home', 'Home Loan'],
-  ['education', 'Education Loan'],
-  ['vehicle', 'Vehicle Loan'],
   ['personal', 'Personal Loan'],
-  ['credit_card', 'Credit Card Debt'],
+  ['vehicle', 'Vehicle Loan'],
+  ['education', 'Education Loan'],
   ['gold', 'Gold Loan'],
   ['business', 'Business Loan'],
-  ['other', 'Other Loan'],
+  ['lap', 'Loan Against Property'],
+  ['credit_card', 'Credit Card Debt'],
+  ['other', 'Other'],
 ];
 export const LOAN_TYPE_LABELS: Record<string, string> = Object.fromEntries(LOAN_TYPES);
 export const LOAN_TYPE_COLORS: Record<string, string> = {
@@ -19,6 +20,7 @@ export const LOAN_TYPE_COLORS: Record<string, string> = {
   credit_card: '#E05C5C',
   gold: '#C2A14A',
   business: '#52A77E',
+  lap: '#7E8AA2',
   other: '#9DD1C2',
 };
 

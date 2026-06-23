@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import BouncePressable from '../components/BouncePressable';
 import NotificationBell from '../components/NotificationBell';
+import ThemeToggle from '../components/ThemeToggle';
 import BillScanModal from '../components/BillScanModal';
 import { DistributionPie, TrendLine } from '../components/charts';
 import { Kpi, LineItem, ProgressBar, Row, SectionCard } from '../components/ui';
@@ -95,6 +96,7 @@ const DashboardScreen: React.FC = () => {
     navigation.setOptions({
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          <ThemeToggle color={theme.colors.onSurface} />
           <NotificationBell color={theme.colors.onSurface} />
         </View>
       ),

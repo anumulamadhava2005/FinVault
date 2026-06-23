@@ -12,6 +12,7 @@ import { AppProvider, useApp } from '@/context/AppContext';
 import { darkTheme, lightTheme, palette } from '@/theme';
 import { first } from '@/db';
 import BouncePressable from '@/components/BouncePressable';
+import ThemeToggle from '@/components/ThemeToggle';
 
 const paperIconSettings = {
   icon: (props: any) => <MaterialCommunityIcons {...props} />,
@@ -1024,6 +1025,10 @@ const Navigator: React.FC = () => {
           drawerInactiveTintColor: theme.colors.onSurfaceVariant,
           drawerStyle: { backgroundColor: theme.colors.surface, width: 280 },
           sceneStyle: { backgroundColor: theme.colors.background },
+          // Default quick-access theme toggle for screens that don't set their
+          // own headerRight (Reports, Vault, Settings). Screens with a
+          // NotificationBell add the toggle to the left of the bell themselves.
+          headerRight: () => <ThemeToggle color={theme.colors.onSurface} />,
         }}
       >
         <Drawer.Screen name="index" options={{ title: 'Dashboard', drawerIcon: drawerIcon('view-dashboard') }} />

@@ -182,6 +182,7 @@ export interface Loan {
   notes: string | null;
   status: string; // active|closed|defaulted
   interest_type: string | null;
+  details_json: string | null;
   created_at: string;
 }
 

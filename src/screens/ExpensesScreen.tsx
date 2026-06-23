@@ -12,6 +12,7 @@ import * as Sharing from 'expo-sharing';
 import { useNavigation } from 'expo-router';
 import BouncePressable from '../components/BouncePressable';
 import NotificationBell from '../components/NotificationBell';
+import ThemeToggle from '../components/ThemeToggle';
 import { ZoomableImage } from '../components/ImageLightbox';
 import { DistributionPie, TrendLine } from '../components/charts';
 import { EmptyState, Kpi, LineItem, ProgressBar, Row, Screen, SectionCard } from '../components/ui';
@@ -182,6 +183,7 @@ const ExpensesScreen: React.FC = () => {
     navigation.setOptions({
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          <ThemeToggle color={theme.colors.onSurface} />
           <NotificationBell
             kinds={['budget_exceeded']}
             color={theme.colors.onSurface}
