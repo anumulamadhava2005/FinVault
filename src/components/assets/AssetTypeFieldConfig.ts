@@ -235,13 +235,13 @@ export const ASSET_TYPE_CONFIGS: Record<string, AssetTypeConfig> = {
     label: 'Bank Account',
     icon: 'bank',
     showQuantity: false,
-    assetNameLabel: 'Bank / account name',
-    investedLabel: 'Balance (₹)',
+    assetNameLabel: 'Bank name',
     currentValueLabel: 'Current balance (₹)',
     investmentDateLabel: 'Balance as of',
     extraSection: 'ACCOUNT DETAILS',
     investmentDetailsSection: 'BALANCE',
     extraFields: [
+      { key: 'bank_name', label: 'Bank name', type: 'text', detailKey: true },
       { key: 'account_no', label: 'Account number', type: 'text', detailKey: true },
       {
         key: 'account_type',

@@ -11,6 +11,7 @@ import { useNavigation } from 'expo-router';
 import { Screen, SectionCard, Kpi, Row, ProgressBar } from '../components/ui';
 import ThemeToggle from '../components/ThemeToggle';
 import { useApp } from '../context/AppContext';
+import { first } from '../db';
 import { netWorth, financialHealth, portfolioSummary } from '../services/finance';
 import { retirementPlan } from '../services/portfolioIntelligence';
 import { palette } from '../theme';
@@ -39,14 +40,33 @@ const RetirementCalculatorScreen: React.FC = () => {
     const fh = financialHealth(userId!);
     const sipPaise = portfolioSummary(userId!).monthly_sip;
     const monthlyExpense = fh.monthly_expenses ? Math.round(fh.monthly_expenses / 100) : 50000;
+
+    // Derive age from stored DOB, fall back to 30.
+    let age = 30;
+    const userRow = first<{ date_of_birth: string | null }>(
+      'SELECT date_of_birth FROM users WHERE id = ?',
+      [userId!],
+    );
+    if (userRow?.date_of_birth) {
+      const born = new Date(userRow.date_of_birth);
+      const today = new Date();
+      age = today.getFullYear() - born.getFullYear();
+      if (
+        today.getMonth() < born.getMonth() ||
+        (today.getMonth() === born.getMonth() && today.getDate() < born.getDate())
+      ) age -= 1;
+      age = Math.max(1, Math.min(age, 100));
+    }
+
     return {
       currentCorpus: Math.round(corpusPaise / 100),
       monthlySip: Math.round(sipPaise / 100),
       monthlyExpense,
+      age,
     };
   }, [userId]);
 
-  const [currentAge, setCurrentAge] = useState('30');
+  const [currentAge, setCurrentAge] = useState(String(prefill.age));
   const [retireAge, setRetireAge] = useState('60');
   const [lifeExpectancy, setLifeExpectancy] = useState('85');
   const [monthlyExpense, setMonthlyExpense] = useState(String(prefill.monthlyExpense));

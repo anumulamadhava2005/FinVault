@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useNavigation } from 'expo-router';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Pressable, ScrollView, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Easing, Pressable, RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -97,13 +97,28 @@ const DashboardScreen: React.FC = () => {
     return null;
   });
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const doMarketRefresh = async () => {
+    await Promise.all([
+      refreshMarketData().catch(() => {}),
+      refreshAssetMarket(userId!).catch(() => {}),
+    ]);
+    refresh();
+  };
+
   // Keep the live market snapshot + per-asset day-change/series warm. Refresh
   // once when asset data lands so today's gain/loss and movers populate.
   useEffect(() => {
-    refreshMarketData().catch(() => { /* offline — cached values are used */ });
-    refreshAssetMarket(userId!).then(() => refresh()).catch(() => { /* offline */ });
+    doMarketRefresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  const handlePullRefresh = async () => {
+    setRefreshing(true);
+    await doMarketRefresh();
+    setRefreshing(false);
+  };
 
   // Process automatic lifecycle events (maturities, loan closures, goal
   // completions) on load; refresh once if anything moved to history.
@@ -298,6 +313,14 @@ const DashboardScreen: React.FC = () => {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
       >
         {/* ================= TODAY ================= */}
         {(() => {

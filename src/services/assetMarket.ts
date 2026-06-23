@@ -9,11 +9,10 @@
 import { all, first, run } from '../db';
 import type { Asset } from '../models/types';
 import { nowISO, todayISO, parseISO, monthsBetween } from '../utils/date';
+import { fetchYahooChart } from '../utils/yahoo';
 
 type AssetRow = Asset & { type_name: string; slug: string };
 
-const UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36';
-const YAHOO = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const TROY_OZ_TO_GRAMS = 31.1035;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -44,26 +43,14 @@ const monthEndCloses = (timestamps: number[], closes: number[]): { label: string
 };
 
 async function yahooDaily(symbol: string): Promise<{ closes: { label: string; value: number }[]; price: number; prevClose: number } | null> {
-  try {
-    const res = await fetch(`${YAHOO}/${encodeURIComponent(symbol)}?interval=1d&range=1y`, { headers: { 'User-Agent': UA } });
-    if (!res.ok) return null;
-    const j: any = await res.json();
-    const r = j?.chart?.result?.[0];
-    if (!r) return null;
-    const ts: number[] = r.timestamp ?? [];
-    const closeArr: number[] = r.indicators?.quote?.[0]?.close ?? [];
-    const price = r.meta?.regularMarketPrice ?? closeArr.filter((c) => c != null).pop();
-    const prevClose = r.meta?.chartPreviousClose ?? r.meta?.previousClose ?? price;
-    if (!price) return null;
-    return { closes: monthEndCloses(ts, closeArr), price, prevClose };
-  } catch {
-    return null;
-  }
+  const data = await fetchYahooChart(symbol, '1y');
+  if (!data) return null;
+  return { closes: monthEndCloses(data.timestamps, data.closes), price: data.price, prevClose: data.prevClose };
 }
 
 async function usdInr(): Promise<number> {
-  const fx = await yahooDaily('USDINR=X');
-  return fx?.price ?? 83;
+  const data = await fetchYahooChart('USDINR=X', '1d');
+  return data?.price ?? 83;
 }
 
 /** Last 13 month-end values + today, scaled to the asset's quantity (paise). */

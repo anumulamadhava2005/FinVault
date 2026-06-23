@@ -11,6 +11,7 @@ import { Image } from 'expo-image';
 import * as Sharing from 'expo-sharing';
 import { useNavigation } from 'expo-router';
 import BouncePressable from '../components/BouncePressable';
+import BillScanModal from '../components/BillScanModal';
 import NotificationBell from '../components/NotificationBell';
 import ThemeToggle from '../components/ThemeToggle';
 import { ZoomableImage } from '../components/ImageLightbox';
@@ -59,6 +60,7 @@ const ExpensesScreen: React.FC = () => {
   const [editBudgets, setEditBudgets] = useState<Record<string, string>>({});
 
   // Bulk operation states
+  const [scanOpen, setScanOpen] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
   const [csvText, setCsvText] = useState('');
   const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
@@ -187,13 +189,6 @@ const ExpensesScreen: React.FC = () => {
           <NotificationBell
             kinds={['budget_exceeded']}
             color={theme.colors.onSurface}
-          />
-          <IconButton
-            icon="bullseye-arrow"
-            iconColor={theme.colors.onSurface}
-            onPress={openBudgetSettings}
-            size={22}
-            style={{ margin: 0 }}
           />
         </View>
       ),
@@ -404,6 +399,23 @@ const ExpensesScreen: React.FC = () => {
     }
   };
 
+  const handlePickCsvFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['text/csv', 'text/plain', 'application/csv', '*/*'],
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      try {
+        const content = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
+        setCsvText(content);
+      } catch {
+        setSnackMsg('Could not read the selected file.');
+      }
+    }
+  };
+
   const handleCsvImport = () => {
     if (!csvText.trim()) return;
 
@@ -546,6 +558,16 @@ const ExpensesScreen: React.FC = () => {
             <Menu.Item title="Monthly" onPress={() => { setTrendType('monthly'); setTrendMenu(false); }} />
             <Menu.Item title="Yearly" onPress={() => { setTrendType('yearly'); setTrendMenu(false); }} />
           </Menu>
+
+          <Button
+            compact
+            mode="text"
+            icon="camera-outline"
+            labelStyle={{ fontSize: 11 }}
+            onPress={() => setScanOpen(true)}
+          >
+            Scan Bill
+          </Button>
 
           <Button
             compact
@@ -1025,6 +1047,7 @@ const ExpensesScreen: React.FC = () => {
       >
         <FAB
           icon="plus"
+          label="Add Expense"
           style={{
             backgroundColor: theme.colors.primary,
             borderRadius: 28,
@@ -1037,7 +1060,7 @@ const ExpensesScreen: React.FC = () => {
 
       <Portal>
         {/* ADD/EDIT EXPENSE MODAL OVERHAULED */}
-        <Dialog visible={addOpen} onDismiss={closeEditor} style={{ borderRadius: theme.roundness, paddingVertical: 8 }}>
+        <Dialog visible={addOpen} onDismiss={closeEditor} style={{ borderRadius: theme.roundness, paddingVertical: 8, height: 'auto' }}>
           <Dialog.Title style={{ fontWeight: '700' }}>{editingId ? 'Edit Expense' : 'Add Expense'}</Dialog.Title>
           <Dialog.Content style={{ gap: 12 }}>
             {/* Category selection field with dropdown affordance */}
@@ -1255,8 +1278,19 @@ const ExpensesScreen: React.FC = () => {
           <Dialog.Title>CSV Bulk Import</Dialog.Title>
           <Dialog.Content>
             <ScrollView keyboardShouldPersistTaps="handled">
+              <BouncePressable onPress={handlePickCsvFile}>
+                <Button
+                  mode="outlined"
+                  icon="file-delimited-outline"
+                  style={{ borderRadius: theme.roundness, marginBottom: 14, borderStyle: 'dashed' }}
+                  labelStyle={{ fontWeight: '700' }}
+                  pointerEvents="none"
+                >
+                  Pick CSV File
+                </Button>
+              </BouncePressable>
               <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
-                Paste CSV data. Expected columns:
+                Or paste CSV data below. Expected columns:
               </Text>
               <Text variant="labelSmall" style={{ fontFamily: 'monospace', backgroundColor: theme.colors.surfaceVariant, padding: 6, borderRadius: 4, marginBottom: 12 }}>
                 expense_date,category,amount,description,notes
@@ -1474,6 +1508,12 @@ const ExpensesScreen: React.FC = () => {
           </View>
         </Modal>
       </Portal>
+
+      <BillScanModal
+        visible={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onSaved={() => { refresh(); setSnackMsg('Expense saved from scan'); }}
+      />
 
       <Snackbar visible={snackMsg !== null} onDismiss={() => setSnackMsg(null)} duration={3000}>
         {snackMsg}

@@ -40,7 +40,8 @@ interface AppState {
     income: number,
     riskProfile: string,
     lockMode: VaultLockMode,
-    seedDemo: boolean
+    seedDemo: boolean,
+    dob?: string
   ) => Promise<boolean>;
   loginWithPassword: (password: string) => Promise<boolean>;
   loginWithBiometrics: () => Promise<boolean>;
@@ -144,7 +145,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     income: number,
     riskProfile: string,
     lockMode: VaultLockMode,
-    seedDemo: boolean
+    seedDemo: boolean,
+    dob?: string
   ): Promise<boolean> => {
     const newUid = newId();
     const hashedPassword = await hashPassword(password);
@@ -153,9 +155,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       // 1. Insert User
       run(
-        `INSERT INTO users (id, full_name, email, password_hash, risk_profile, monthly_income, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [newUid, name, email, hashedPassword, riskProfile, income * 100, dateStr]
+        `INSERT INTO users (id, full_name, email, password_hash, risk_profile, monthly_income, date_of_birth, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newUid, name, email, hashedPassword, riskProfile, income * 100, dob ?? null, dateStr]
       );
 
       // 2. Insert User Preferences

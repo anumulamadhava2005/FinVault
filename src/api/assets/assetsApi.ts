@@ -7,6 +7,7 @@
  */
 
 import type { ApiResponse } from '../client';
+import { fetchYahooChart } from '../../utils/yahoo';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -28,43 +29,15 @@ export interface GoldPriceResult {
   usd_inr: number;
 }
 
-// ─── Yahoo Finance v8 helper ────────────────────────────────────────────────
-
-const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
-
-interface YahooChartResponse {
-  chart: {
-    result: Array<{
-      meta: {
-        regularMarketPrice: number;
-        currency: string;
-        symbol: string;
-      };
-    }> | null;
-    error: { code: string; description: string } | null;
-  };
-}
+// ─── Yahoo Finance helper ────────────────────────────────────────────────────
 
 async function yahooPrice(
   symbol: string,
   signal?: AbortSignal,
 ): Promise<{ price: number; currency: string } | null> {
-  try {
-    const url = `${YAHOO_BASE}/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-    const res = await fetch(url, {
-      signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
-      },
-    });
-    if (!res.ok) return null;
-    const json: YahooChartResponse = await res.json();
-    const meta = json.chart?.result?.[0]?.meta;
-    if (!meta || !meta.regularMarketPrice) return null;
-    return { price: meta.regularMarketPrice, currency: meta.currency ?? 'INR' };
-  } catch {
-    return null;
-  }
+  const data = await fetchYahooChart(symbol, '1d', signal);
+  if (!data) return null;
+  return { price: data.price, currency: data.currency };
 }
 
 // ─── Equity ─────────────────────────────────────────────────────────────────

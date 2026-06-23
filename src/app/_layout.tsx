@@ -1,6 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Switch, KeyboardAvoidingView, Platform, Animated } from 'react-native';
+import { View, StyleSheet, ScrollView, Switch, KeyboardAvoidingView, Platform, Animated, Pressable } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { PaperProvider, Avatar, Divider, SegmentedButtons, Text, TextInput, Button, HelperText, ActivityIndicator, useTheme, Portal, Dialog } from 'react-native-paper';
@@ -350,10 +351,12 @@ const SignupScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [income, setIncome] = useState('');
+  const [dob, setDob] = useState('');
+  const [dobPickerOpen, setDobPickerOpen] = useState(false);
   const [riskProfile, setRiskProfile] = useState('moderate');
   const [vaultLockMode, setVaultLockMode] = useState<'biometric' | 'password'>('password');
   const [seedDemo, setSeedDemo] = useState(true);
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -434,7 +437,8 @@ const SignupScreen: React.FC = () => {
         numericIncome,
         riskProfile,
         vaultLockMode,
-        seedDemo
+        seedDemo,
+        dob || undefined
       );
       setLoading(false);
       if (!success) {
@@ -557,9 +561,41 @@ const SignupScreen: React.FC = () => {
                   onChangeText={setIncome}
                   keyboardType="numeric"
                   mode="outlined"
-                  style={{ marginBottom: 20 }}
+                  style={{ marginBottom: 12 }}
                   left={<TextInput.Icon icon="currency-inr" />}
                 />
+
+                <Pressable onPress={() => setDobPickerOpen(true)}>
+                  <TextInput
+                    label="Date of Birth (optional)"
+                    value={dob}
+                    mode="outlined"
+                    editable={false}
+                    pointerEvents="none"
+                    style={{ marginBottom: 20 }}
+                    left={<TextInput.Icon icon="cake-variant-outline" />}
+                    right={<TextInput.Icon icon="calendar" onPress={() => setDobPickerOpen(true)} />}
+                    placeholder="YYYY-MM-DD"
+                  />
+                </Pressable>
+
+                {dobPickerOpen && (
+                  <DateTimePicker
+                    value={dob ? new Date(dob + 'T00:00:00') : new Date(new Date().getFullYear() - 25, 0, 1)}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    maximumDate={new Date()}
+                    onChange={(_e, selected) => {
+                      setDobPickerOpen(Platform.OS === 'ios');
+                      if (selected) {
+                        const y = selected.getFullYear();
+                        const m = String(selected.getMonth() + 1).padStart(2, '0');
+                        const d = String(selected.getDate()).padStart(2, '0');
+                        setDob(`${y}-${m}-${d}`);
+                      }
+                    }}
+                  />
+                )}
 
                 <Text variant="labelLarge" style={{ fontWeight: '700', marginBottom: 12, color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
                   Select Your Risk Profile
@@ -608,31 +644,43 @@ const SignupScreen: React.FC = () => {
                   Select Lock Mode
                 </Text>
 
-                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 24 }}>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
                   {lockModes.map((lm) => {
                     const isSelected = vaultLockMode === lm.value;
                     return (
-                      <BouncePressable key={lm.value} onPress={() => setVaultLockMode(lm.value as any)} style={{ flex: 1 }}>
+                      <BouncePressable key={lm.value} onPress={() => setVaultLockMode(lm.value as any)} style={{ flex: 1, minWidth: 0 }}>
                         <View style={{
-                          padding: 16,
+                          paddingVertical: 14,
+                          paddingHorizontal: 8,
                           borderRadius: theme.roundness || 8,
                           borderWidth: 1.5,
                           borderColor: isSelected ? theme.colors.primary : theme.colors.outlineVariant,
                           backgroundColor: isSelected ? theme.colors.primaryContainer + '0F' : theme.colors.surface,
                           alignItems: 'center',
-                          gap: 8,
-                          minHeight: 120,
+                          gap: 6,
                           justifyContent: 'center',
                         }}>
                           <MaterialCommunityIcons
                             name={lm.icon as any}
-                            size={28}
+                            size={24}
                             color={isSelected ? theme.colors.primary : theme.colors.onSurfaceVariant}
                           />
-                          <Text variant="labelLarge" style={{ fontWeight: '700', textAlign: 'center', color: isSelected ? theme.colors.primary : theme.colors.onSurface }}>
+                          <Text
+                            numberOfLines={2}
+                            style={{
+                              fontWeight: '700',
+                              textAlign: 'center',
+                              fontSize: 12,
+                              lineHeight: 16,
+                              color: isSelected ? theme.colors.primary : theme.colors.onSurface,
+                            }}
+                          >
                             {lm.label}
                           </Text>
-                          <Text variant="bodySmall" style={{ textAlign: 'center', fontSize: 10, color: theme.colors.onSurfaceVariant }}>
+                          <Text
+                            numberOfLines={2}
+                            style={{ textAlign: 'center', fontSize: 10, lineHeight: 13, color: theme.colors.onSurfaceVariant }}
+                          >
                             {lm.desc}
                           </Text>
                         </View>

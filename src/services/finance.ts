@@ -4,6 +4,7 @@
  */
 import { all, first } from '../db';
 import type { Asset, FinancialGoal, InsurancePolicy, Loan, VaultCredential } from '../models/types';
+import { diversification as portfolioDiversification } from './portfolioIntelligence';
 import { parseISO, daysBetween, monthsBetween, todayISO } from '../utils/date';
 import { pct } from '../utils/money';
 import {
@@ -733,16 +734,19 @@ export const financialHealth = (userId: string, riskProfile = 'moderate') => {
   const savings_rate = income_total ? Number((((income_total - expense_total) / income_total) * 100).toFixed(1)) : 0;
   const insights: string[] = [];
 
-  let diversification: number;
+  // Delegate to the same engine the Insights screen uses so both show the same number.
+  const divResult = portfolioDiversification(userId);
+  const diversification = divResult.score;
   if (!alloc.length) {
-    diversification = 40;
     insights.push('Add assets to start measuring diversification.');
   } else {
-    const top_pct = Math.max(...alloc.map((a) => a.pct));
-    const breadth = Math.min(alloc.length / 5, 1) * 100;
-    const balance = Math.max(0, 100 - Math.max(0, top_pct - 40) * 1.5);
-    diversification = Number((breadth * 0.6 + balance * 0.4).toFixed(1));
-    insights.push(diversification >= 70 ? 'Diversification is strong across asset types.' : 'Spread investments across more asset types to diversify.');
+    insights.push(
+      diversification >= 70
+        ? 'Diversification is strong across asset classes.'
+        : divResult.over_diversified
+          ? 'Too many small holdings — consolidate into fewer, higher-conviction positions.'
+          : 'Spread investments across more asset classes (equity, debt, gold) to diversify.',
+    );
   }
 
   let risk_balance = 50;

@@ -126,8 +126,10 @@ const BillScanModal: React.FC<Props> = ({ visible, onClose, onSaved }) => {
     let text = '';
     try {
       const path = captured.uri.replace(/^file:\/\//, '');
-      const blocks: string[] = await TextRecognition.recognize(path);
-      text = Array.isArray(blocks) ? blocks.join('\n') : String(blocks ?? '');
+      const result = await TextRecognition.recognizeText(path);
+      text = result.fullText
+        ?? result.pages?.map((p) => p.fullText).join('\n')
+        ?? '';
     } catch (err) {
       console.warn('OCR failed:', err);
       Alert.alert(

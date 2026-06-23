@@ -304,41 +304,88 @@ export const seedDemoData = (
     P('health', 'Optima Restore', 'Star Health', 1000000, 22000, 'yearly', '2027-03-31');
     P('vehicle', 'Car Comprehensive', 'ICICI Lombard', 800000, 12000, 'yearly', '2027-01-15');
 
-    // --- Expenses (seeded category mapping) ---
+    // --- Expenses + Income: current month + 11 prior months ---
     const cats = db.getAllSync<{ id: string; name: string }>(
       'SELECT id, name FROM expense_categories WHERE user_id = ? ORDER BY sort_order',
       [userId]
     );
-    const findCatIdx = (name: string) => cats.findIndex((c) => c.name === name);
+    const findCat = (name: string) => cats.find((c) => c.name === name)?.id ?? null;
 
-    const ym = new Date().toISOString().slice(0, 7);
-    const E = (catName: string, amount: number, desc: string, day: string) => {
-      const idx = findCatIdx(catName);
-      if (idx !== -1) {
+    // Helper to compute "YYYY-MM" for N months ago (0 = current month)
+    const monthStr = (ago: number): string => {
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - ago);
+      return d.toISOString().slice(0, 7);
+    };
+
+    const addExpense = (ym: string, catName: string, amount: number, desc: string, day: string) => {
+      const catId = findCat(catName);
+      if (catId) {
         ins('expenses', {
-          id: uid(),
-          user_id: userId,
-          category_id: cats[idx].id,
-          amount: R(amount),
-          description: desc,
-          expense_date: `${ym}-${day}`,
-          spent_by_id: null,
-          notes: null,
+          id: uid(), user_id: userId, category_id: catId,
+          amount: R(amount), description: desc,
+          expense_date: `${ym}-${day}`, spent_by_id: null, notes: null,
         });
       }
     };
-    
-    E('Food & Dining', 1850, 'Groceries — BigBasket', '03');
-    E('Food & Dining', 640, 'Dinner', '08');
-    E('Transport', 1200, 'Fuel', '05');
-    E('Utilities', 2400, 'Electricity bill', '10');
-    E('Rent', 35000, 'Monthly rent', '01');
-    E('Shopping', 4500, 'Clothing', '12');
-    E('Health', 1800, 'Pharmacy', '14');
-    E('Entertainment', 1200, 'Movie night', '15');
 
-    // --- Income ---
-    ins('income', { id: uid(), user_id: userId, amount: R(180000), source: 'Salary', income_date: `${ym}-01` });
+    const addIncome = (ym: string, amount: number, source: string) => {
+      ins('income', { id: uid(), user_id: userId, amount: R(amount), source, income_date: `${ym}-01` });
+    };
+
+    // Monthly expense patterns — slight variation across months to produce realistic trend lines
+    const monthlyTemplates = [
+      // [Food, Transport, Utilities, Rent, Shopping, Health, Entertainment]
+      [18500, 6200, 2400, 35000, 8200, 1800, 3200],  // 0 = current
+      [17200, 5800, 2600, 35000, 5500, 2400, 2800],  // 1
+      [19800, 6500, 2200, 35000, 12000, 1200, 4500], // 2
+      [16400, 5200, 2800, 35000, 3800, 3200, 2200],  // 3
+      [21000, 7200, 2100, 35000, 9500, 1600, 5800],  // 4
+      [17800, 5900, 2500, 35000, 6200, 2000, 3600],  // 5
+      [16200, 5400, 2700, 35000, 4400, 1400, 2400],  // 6
+      [20500, 6800, 2300, 35000, 11000, 2800, 4800], // 7
+      [18000, 6100, 2450, 35000, 7200, 1900, 3100],  // 8
+      [15800, 5100, 2600, 35000, 3200, 1100, 1800],  // 9
+      [22000, 7500, 2000, 35000, 14000, 3500, 6200], // 10
+      [17500, 5700, 2550, 35000, 5800, 2200, 3000],  // 11
+    ];
+
+    const catNames = ['Food & Dining', 'Transport', 'Utilities', 'Rent', 'Shopping', 'Health', 'Entertainment'];
+    const catDays   = ['03', '05', '10', '01', '12', '14', '15'];
+    const catDescs  = [
+      'Groceries & dining', 'Fuel & commute', 'Electricity bill',
+      'Monthly rent', 'Shopping', 'Healthcare & pharmacy', 'Entertainment',
+    ];
+
+    const salaries = [180000, 178000, 180000, 175000, 180000, 178000, 175000, 180000, 178000, 175000, 180000, 178000];
+    const bonuses  = [0, 0, 0, 50000, 0, 0, 0, 0, 30000, 0, 0, 0]; // quarterly / ad-hoc
+
+    for (let ago = 0; ago < 12; ago++) {
+      const ym = monthStr(ago);
+      const tmpl = monthlyTemplates[ago] ?? monthlyTemplates[0];
+      catNames.forEach((cat, i) => addExpense(ym, cat, tmpl[i], catDescs[i], catDays[i]));
+      addIncome(ym, salaries[ago], 'Salary');
+      if (bonuses[ago]) addIncome(ym, bonuses[ago], 'Bonus');
+    }
+
+    // Net-worth snapshots so Wealth Recap and trend charts have history
+    for (let ago = 1; ago <= 11; ago++) {
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - ago);
+      const ym = d.toISOString().slice(0, 7);
+      const decay = 1 - ago * 0.012; // ~1.2% per month back
+      const assets  = Math.round(9000000 * decay);  // approx total assets
+      const liabs   = Math.round(4670000 * (1 + ago * 0.008));
+      try {
+        db.runSync(
+          `INSERT OR IGNORE INTO networth_snapshots (id, user_id, ym, net_worth, total_assets, total_liabilities, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [uid(), userId, ym, assets - liabs, assets, liabs, `${ym}-01T00:00:00.000Z`],
+        );
+      } catch { /* ignore duplicates */ }
+    }
 
     // --- Vault ---
     const vcat = uid();

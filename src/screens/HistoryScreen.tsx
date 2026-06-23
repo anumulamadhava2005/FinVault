@@ -3,7 +3,7 @@
  * assets sold/matured/closed, loans closed, insurance claims/closures, and goal
  * completions/archives. Filterable by category; never affects active totals.
  */
-import React, { useLayoutEffect, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useState } from 'react';
 import { View, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -57,7 +57,11 @@ const HistoryScreen: React.FC = () => {
     });
   }, [navigation, theme]);
 
-  const events = useData(() => historyEvents(userId!, filter === 'all' ? undefined : filter));
+  const allEvents = useData(() => historyEvents(userId!));
+  const events = useMemo(
+    () => (filter === 'all' ? allEvents : allEvents.filter((e) => e.category === filter)),
+    [allEvents, filter],
+  );
 
   return (
     <Screen>

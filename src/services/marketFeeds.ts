@@ -14,32 +14,16 @@
  */
 import { first, run } from '../db';
 import { nowISO } from '../utils/date';
+import { fetchYahooChart, YAHOO_UA } from '../utils/yahoo';
 
 // ─── Yahoo chart series ──────────────────────────────────────────────────────
-
-const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
-const UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36';
 
 interface SeriesResult { price: number; prevClose: number; firstClose: number; currency: string }
 
 async function fetchYahooSeries(symbol: string, signal?: AbortSignal): Promise<SeriesResult | null> {
-  try {
-    const url = `${YAHOO_BASE}/${encodeURIComponent(symbol)}?interval=1d&range=1y`;
-    const res = await fetch(url, { signal, headers: { 'User-Agent': UA } });
-    if (!res.ok) return null;
-    const json: any = await res.json();
-    const r = json?.chart?.result?.[0];
-    if (!r) return null;
-    const meta = r.meta ?? {};
-    const closes: number[] = (r.indicators?.quote?.[0]?.close ?? []).filter((c: number | null) => c != null);
-    const price = meta.regularMarketPrice ?? closes[closes.length - 1];
-    const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? closes[closes.length - 2] ?? price;
-    const firstClose = closes[0] ?? price;
-    if (!price) return null;
-    return { price, prevClose, firstClose, currency: meta.currency ?? 'INR' };
-  } catch {
-    return null;
-  }
+  const data = await fetchYahooChart(symbol, '1y', signal);
+  if (!data) return null;
+  return { price: data.price, prevClose: data.prevClose, firstClose: data.firstClose, currency: data.currency };
 }
 
 // ─── Market snapshot ─────────────────────────────────────────────────────────
@@ -140,10 +124,13 @@ const RSS_FEEDS: { url: string; source: string }[] = [
   { url: 'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms', source: 'ET Markets' },
 ];
 
-const decodeEntities = (s: string): string =>
-  s
+const decodeEntities = (s: string): string => {
+  // Pass 1 – unwrap CDATA and strip literal HTML tags.
+  let out = s
     .replace(/<!\[CDATA\[(.*?)\]\]>/gs, '$1')
-    .replace(/<[^>]+>/g, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  // Pass 2 – decode named/numeric entities.
+  out = out
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -151,8 +138,11 @@ const decodeEntities = (s: string): string =>
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&')
     .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+  // Pass 3 – strip any HTML tags that appeared after entity decoding (e.g. &lt;a&gt;).
+  out = out.replace(/<[^>]+>/g, ' ');
+  return out.replace(/\s+/g, ' ').trim();
+};
 
 const tag = (block: string, name: string): string => {
   const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, 'i'));
@@ -187,7 +177,7 @@ export const fetchWealthFeed = async (): Promise<FeedItem[]> => {
   const results = await Promise.all(
     RSS_FEEDS.map(async ({ url, source }) => {
       try {
-        const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/rss+xml, application/xml, text/xml' } });
+        const res = await fetch(url, { headers: { 'User-Agent': YAHOO_UA, Accept: 'application/rss+xml, application/xml, text/xml' } });
         if (!res.ok) return [];
         const xml = await res.text();
         return parseRss(xml, source);

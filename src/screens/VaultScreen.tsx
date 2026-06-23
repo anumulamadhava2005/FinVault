@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View } from 'react-native';
+import { Linking, Pressable, View } from 'react-native';
 import { Button, Dialog, FAB, IconButton, Portal, Text, TextInput, useTheme, ActivityIndicator, Divider } from 'react-native-paper';
 import BouncePressable from '../components/BouncePressable';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -263,6 +263,21 @@ const VaultScreen: React.FC = () => {
                   />
                 </View>
                 <ProgressBar pct={c.password_strength} color={statusColor(tone)} height={6} />
+                {c.url ? (
+                  <Pressable
+                    onPress={() => Linking.openURL(c.url!.startsWith('http') ? c.url! : `https://${c.url}`)}
+                    style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                  >
+                    <MaterialCommunityIcons name="open-in-new" size={13} color={theme.colors.primary} />
+                    <Text
+                      variant="labelSmall"
+                      numberOfLines={1}
+                      style={{ color: theme.colors.primary, textDecorationLine: 'underline', flex: 1 }}
+                    >
+                      {c.url}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </SectionCard>
             );
           })
