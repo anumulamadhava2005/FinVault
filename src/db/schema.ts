@@ -81,6 +81,26 @@ CREATE TABLE IF NOT EXISTS asset_images (
   local_path TEXT
 );
 
+CREATE TABLE IF NOT EXISTS loan_images (
+  id TEXT PRIMARY KEY,
+  loan_id TEXT NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uri TEXT NOT NULL,
+  label TEXT,
+  created_at TEXT NOT NULL,
+  local_path TEXT
+);
+
+CREATE TABLE IF NOT EXISTS policy_images (
+  id TEXT PRIMARY KEY,
+  policy_id TEXT NOT NULL REFERENCES insurance_policies(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uri TEXT NOT NULL,
+  label TEXT,
+  created_at TEXT NOT NULL,
+  local_path TEXT
+);
+
 CREATE TABLE IF NOT EXISTS expense_categories (
   id TEXT PRIMARY KEY,
   user_id TEXT REFERENCES users(id) ON DELETE CASCADE,

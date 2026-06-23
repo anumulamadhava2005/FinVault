@@ -46,6 +46,7 @@ const EditAssetScreen: React.FC = () => {
   }
 
   const handleSave = (values: AssetFormValues) => {
+    // Attachments are persisted live via AssetForm's `assetId` (no second arg needed).
     update('assets', id, {
       invested_amount: values.invested_amount,
       current_value: values.current_value,
@@ -96,6 +97,7 @@ const EditAssetScreen: React.FC = () => {
           assetTypes={assetTypes}
           initial={assetToFormValues(asset)}
           title="Edit Asset"
+          assetId={id}
         />
       </SectionCard>
       <View style={{ paddingHorizontal: 18 }}>

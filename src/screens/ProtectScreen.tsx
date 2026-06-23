@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useLayoutEffect } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
+import { useNavigation } from 'expo-router';
 import {
   Button,
   Dialog,
@@ -21,12 +22,16 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BouncePressable from '../components/BouncePressable';
+import NotificationBell from '../components/NotificationBell';
+import AttachmentsSection from '../components/AttachmentsSection';
+import type { PickedAttachment } from '../services/attachments';
 
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
 import { all, insert, newId, remove, run } from '../db';
 import type { InsurancePolicy } from '../models/types';
 import { annualPremium, policyStatus, protectSummary, financialHealth } from '../services/finance';
+import { generateInsuranceNotifications } from '../services/notificationService';
 import { POLICY_TYPES, POLICY_TYPE_LABELS, titleCase } from '../services/constants';
 import { Screen, SectionCard, StatusChip, ProgressBar, LineItem, EmptyState } from '../components/ui';
 import { palette } from '../theme';
@@ -64,8 +69,28 @@ const ProtectScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
 
   const policies = useData(() => all<InsurancePolicy>('SELECT * FROM insurance_policies WHERE user_id = ? ORDER BY created_at DESC', [userId!]));
+
+  // Generate premium-due & policy-expiry notifications whenever policy data changes
+  useData(() => {
+    try { generateInsuranceNotifications(userId!); } catch { /* non-critical */ }
+    return null;
+  });
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          <NotificationBell
+            kinds={['premium_due', 'policy_expiring', 'policy_expired']}
+            color={theme.colors.onSurface}
+          />
+        </View>
+      ),
+    });
+  }, [navigation, theme]);
   const summary = useData(() => protectSummary(userId!));
 
   const [addOpen, setAddOpen] = useState(false);
@@ -76,6 +101,8 @@ const ProtectScreen: React.FC = () => {
   const [snackMsg, setSnackMsg] = useState<string | null>(null);
   const [editPolicyId, setEditPolicyId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...blank });
+  // Attachments collected while adding a new policy (persisted after insert).
+  const [policyAttachments, setPolicyAttachments] = useState<PickedAttachment[]>([]);
   const [typeMenu, setTypeMenu] = useState(false);
   const [freqMenu, setFreqMenu] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -155,18 +182,33 @@ const ProtectScreen: React.FC = () => {
       );
       setEditPolicyId(null);
     } else {
+      const policyId = newId();
+      const now = nowISO();
       insert('insurance_policies', {
-        id: newId(),
+        id: policyId,
         user_id: userId!,
         ...data,
         notes: null,
         status: 'active',
         riders: null,
-        created_at: nowISO(),
+        created_at: now,
       });
+      // Persist attachments collected in the form now that the policy row exists.
+      for (const att of policyAttachments) {
+        insert('policy_images', {
+          id: newId(),
+          policy_id: policyId,
+          user_id: userId!,
+          uri: att.uri,
+          label: att.label,
+          created_at: now,
+          local_path: att.local_path,
+        });
+      }
     }
 
     setForm({ ...blank });
+    setPolicyAttachments([]);
     setAddOpen(false);
     refresh();
   };
@@ -986,6 +1028,16 @@ const ProtectScreen: React.FC = () => {
                       {p.next_due_date && <LineItem label="Next Due Date" value={p.next_due_date} />}
                       {p.claim_ratio !== null && <LineItem label="Claim Ratio" value={`${p.claim_ratio}%`} />}
                       {p.tax_benefit && <LineItem label="Tax Benefit" value={`Section ${p.tax_benefit}`} />}
+
+                      {/* Document attachments */}
+                      <View style={{ marginTop: 12 }}>
+                        <AttachmentsSection
+                          userId={userId!}
+                          table="policy_images"
+                          ownerColumn="policy_id"
+                          ownerId={p.id}
+                        />
+                      </View>
                     </View>
                   )}
 
@@ -1014,6 +1066,7 @@ const ProtectScreen: React.FC = () => {
         onPress={() => {
           setForm({ ...blank });
           setEditPolicyId(null);
+          setPolicyAttachments([]);
           setAddOpen(true);
         }}
         style={{
@@ -1259,6 +1312,24 @@ const ProtectScreen: React.FC = () => {
               style={{ marginBottom: 8 }}
               placeholder="e.g. 80C, 80D"
             />
+            {/* Attachments (Policy Document, Premium Receipts, Claim Documents…) */}
+            <View style={{ marginTop: 8, marginBottom: 4 }}>
+              {editPolicyId ? (
+                <AttachmentsSection
+                  userId={userId!}
+                  table="policy_images"
+                  ownerColumn="policy_id"
+                  ownerId={editPolicyId}
+                />
+              ) : (
+                <AttachmentsSection
+                  userId={userId!}
+                  pending={policyAttachments}
+                  onPendingChange={setPolicyAttachments}
+                />
+              )}
+            </View>
+
             <HelperText type={form.policy_name.trim() ? 'info' : 'error'} visible>
               Policy Name is required.
             </HelperText>

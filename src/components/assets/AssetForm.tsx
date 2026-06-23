@@ -9,6 +9,9 @@ import { getTypeConfig } from './AssetTypeFieldConfig';
 import { SIP_ELIGIBLE_TYPES } from '../../services/constants';
 import DatePickerField from './DatePickerField';
 import BouncePressable from '../BouncePressable';
+import AttachmentsSection from '../AttachmentsSection';
+import { useApp } from '../../context/AppContext';
+import type { PickedAttachment } from '../../services/attachments';
 
 export interface AssetFormValues {
   name: string;
@@ -70,12 +73,14 @@ export const assetToFormValues = (a: Asset): AssetFormValues => ({
 interface AssetFormProps {
   visible: boolean;
   onDismiss: () => void;
-  onSave: (values: AssetFormValues) => void;
+  onSave: (values: AssetFormValues, attachments: PickedAttachment[]) => void;
   assetTypes: AssetType[];
   initial?: Partial<AssetFormValues>;
   title?: string;
   inline?: boolean;
   readOnlyIdentity?: boolean;
+  /** When editing an existing asset, attachments are persisted live to this id. */
+  assetId?: string;
 }
 
 const SectionHeading: React.FC<{ label: string }> = ({ label }) => {
@@ -105,9 +110,12 @@ const AssetForm: React.FC<AssetFormProps> = ({
   title = 'Add Asset',
   inline,
   readOnlyIdentity,
+  assetId,
 }) => {
   const theme = useTheme();
+  const { userId } = useApp();
   const [form, setForm] = useState<AssetFormValues>({ ...BLANK, ...initial });
+  const [pendingAttachments, setPendingAttachments] = useState<PickedAttachment[]>([]);
   const [details, setDetails] = useState<Record<string, string>>(() => {
     try { return initial?.details_json ? JSON.parse(initial.details_json) : {}; } catch { return {}; }
   });
@@ -413,7 +421,7 @@ const AssetForm: React.FC<AssetFormProps> = ({
   const handleSave = () => {
     if (!validate()) return;
     const detailsStr = Object.keys(details).length ? JSON.stringify(details) : null;
-    onSave({ ...form, details_json: detailsStr });
+    onSave({ ...form, details_json: detailsStr }, pendingAttachments);
   };
 
   const handleTypeSelect = (id: string) => {
@@ -495,99 +503,44 @@ const AssetForm: React.FC<AssetFormProps> = ({
       {(cfg.showIsin || cfg.showTicker) && cfg.identifiersSection && (
         <SectionHeading label={cfg.identifiersSection} />
       )}
-      {cfg.showIsin && cfg.showTicker ? (
-        <Row gap={12}>
-          <View style={{ flex: 1 }}>
-            <TextInput
-              label="ISIN code (optional)"
-              value={form.isin ?? ''}
-              onChangeText={(v) => set('isin', v || null)}
-              mode="outlined"
-              dense
-              error={!!errors.isin}
-              autoCapitalize="characters"
-              style={{ backgroundColor: theme.colors.surface }}
-            />
-            {!!errors.isin && <HelperText type="error">{errors.isin}</HelperText>}
-          </View>
-          <View style={{ flex: 1 }}>
-            <TextInput
-              label={cfg.slug === 'equity' ? 'NSE/BSE ticker *' : 'BSE/NSE ticker (optional)'}
-              value={form.ticker ?? ''}
-              onChangeText={(v) => set('ticker', v || null)}
-              mode="outlined"
-              dense
-              error={!!errors.ticker}
-              autoCapitalize="characters"
-              placeholder={cfg.slug === 'equity' ? 'e.g. RELIANCE' : cfg.slug === 'mutual_fund' ? 'e.g. HDFCMIDCAP' : 'e.g. SGBAUG28'}
-              style={{ backgroundColor: theme.colors.surface }}
-            />
-            {!!errors.ticker && <HelperText type="error">{errors.ticker}</HelperText>}
-          </View>
-        </Row>
-      ) : (
-        <>
-          {cfg.showIsin && (
-            <View>
-              <TextInput
-                label="ISIN code (optional)"
-                value={form.isin ?? ''}
-                onChangeText={(v) => set('isin', v || null)}
-                mode="outlined"
-                dense
-                error={!!errors.isin}
-                autoCapitalize="characters"
-                style={{ backgroundColor: theme.colors.surface }}
-              />
-              {!!errors.isin && <HelperText type="error">{errors.isin}</HelperText>}
-            </View>
-          )}
-          {cfg.showTicker && (
-            <View>
-              <TextInput
-                label={cfg.slug === 'equity' ? 'NSE/BSE ticker *' : 'BSE/NSE ticker (optional)'}
-                value={form.ticker ?? ''}
-                onChangeText={(v) => set('ticker', v || null)}
-                mode="outlined"
-                dense
-                error={!!errors.ticker}
-                autoCapitalize="characters"
-                placeholder={cfg.slug === 'equity' ? 'e.g. RELIANCE' : cfg.slug === 'mutual_fund' ? 'e.g. HDFCMIDCAP' : 'e.g. SGBAUG28'}
-                style={{ backgroundColor: theme.colors.surface }}
-              />
-              {!!errors.ticker && <HelperText type="error">{errors.ticker}</HelperText>}
-            </View>
-          )}
-        </>
+      {/* Single-column: one field per row */}
+      {cfg.showIsin && (
+        <View>
+          <TextInput
+            label="ISIN code (optional)"
+            value={form.isin ?? ''}
+            onChangeText={(v) => set('isin', v || null)}
+            mode="outlined"
+            dense
+            error={!!errors.isin}
+            autoCapitalize="characters"
+            style={{ backgroundColor: theme.colors.surface }}
+          />
+          {!!errors.isin && <HelperText type="error">{errors.isin}</HelperText>}
+        </View>
+      )}
+      {cfg.showTicker && (
+        <View>
+          <TextInput
+            label={cfg.slug === 'equity' ? 'NSE/BSE ticker *' : 'BSE/NSE ticker (optional)'}
+            value={form.ticker ?? ''}
+            onChangeText={(v) => set('ticker', v || null)}
+            mode="outlined"
+            dense
+            error={!!errors.ticker}
+            autoCapitalize="characters"
+            placeholder={cfg.slug === 'equity' ? 'e.g. RELIANCE' : cfg.slug === 'mutual_fund' ? 'e.g. HDFCMIDCAP' : 'e.g. SGBAUG28'}
+            style={{ backgroundColor: theme.colors.surface }}
+          />
+          {!!errors.ticker && <HelperText type="error">{errors.ticker}</HelperText>}
+        </View>
       )}
 
       {/* Type-specific extra fields BEFORE financial details (account details, item details, property details) */}
       {(cfg.extraFields ?? []).length > 0 && cfg.extraSection && (
         <SectionHeading label={cfg.extraSection} />
       )}
-      {(cfg.extraFields ?? []).length === 2 ? (
-        <Row gap={12}>
-          {(cfg.extraFields ?? []).map((f) => {
-            const isRequired = f.required;
-            const displayLabel = `${f.label}${isRequired ? ' *' : ' (optional)'}`;
-            return (
-              <View key={f.key} style={{ flex: 1 }}>
-                <TextInput
-                  label={displayLabel}
-                  keyboardType={f.type === 'numeric' ? 'numeric' : 'default'}
-                  value={details[f.key] ?? ''}
-                  onChangeText={(v) => setDetails((d) => ({ ...d, [f.key]: v }))}
-                  mode="outlined"
-                  dense
-                  error={!!errors[f.key]}
-                  style={{ backgroundColor: theme.colors.surface }}
-                />
-                {!!errors[f.key] && <HelperText type="error">{errors[f.key]}</HelperText>}
-              </View>
-            );
-          })}
-        </Row>
-      ) : (
+      {
         (cfg.extraFields ?? []).map((f) => {
           const isRequired = f.required;
           const displayLabel = `${f.label}${isRequired ? ' *' : ' (optional)'}`;
@@ -640,204 +593,135 @@ const AssetForm: React.FC<AssetFormProps> = ({
             </View>
           );
         })
-      )}
+      }
 
       {/* Investment details section heading */}
       {cfg.investmentDetailsSection && (
         <SectionHeading label={cfg.investmentDetailsSection} />
       )}
 
-      {/* Quantity / Units + NAV / Price per unit side-by-side if both are shown */}
-      {cfg.showQuantity !== false && (cfg.showNav || cfg.showPricePerUnit) ? (
-        <Row gap={12}>
-          <View style={{ flex: 1 }}>
-            <TextInput
-              label={`${cfg.quantityLabel ?? 'Quantity / Units'} *`}
-              keyboardType="numeric"
-              value={quantityText}
-              onChangeText={handleQuantityChange}
-              mode="outlined"
-              dense
-              error={!!errors.quantity}
-              style={{ backgroundColor: theme.colors.surface }}
-            />
-            {!!errors.quantity && <HelperText type="error">{errors.quantity}</HelperText>}
-          </View>
-          <View style={{ flex: 1 }}>
-            {cfg.showNav && (
-              <View>
-                <TextInput
-                  label={`${cfg.navLabel ?? 'Current NAV (₹)'} (optional)`}
-                  keyboardType="numeric"
-                  value={currentNavText}
-                  onChangeText={handleCurrentNavChange}
-                  mode="outlined"
-                  dense
-                  error={!!errors.current_nav}
-                  style={{ backgroundColor: theme.colors.surface }}
-                />
-                {!!errors.current_nav && <HelperText type="error">{errors.current_nav}</HelperText>}
-              </View>
-            )}
-            {cfg.showPricePerUnit && (
-              <View>
-                <TextInput
-                  label={`${cfg.pricePerUnitLabel ?? 'Price per Unit (₹)'} *`}
-                  keyboardType="numeric"
-                  value={pricePerUnitText}
-                  onChangeText={handlePricePerUnitChange}
-                  mode="outlined"
-                  dense
-                  error={!!errors.price_per_unit}
-                  style={{ backgroundColor: theme.colors.surface }}
-                />
-                {!!errors.price_per_unit && <HelperText type="error">{errors.price_per_unit}</HelperText>}
-              </View>
-            )}
-          </View>
-        </Row>
-      ) : (
-        <>
-          {cfg.showQuantity !== false && (
-            <View>
-              <TextInput
-                label={`${cfg.quantityLabel ?? 'Quantity / Units'} *`}
-                keyboardType="numeric"
-                value={quantityText}
-                onChangeText={handleQuantityChange}
-                mode="outlined"
-                dense
-                error={!!errors.quantity}
-                style={{ backgroundColor: theme.colors.surface }}
-              />
-              {!!errors.quantity && <HelperText type="error">{errors.quantity}</HelperText>}
-            </View>
-          )}
-          {cfg.showNav && (
-            <View>
-              <TextInput
-                label={`${cfg.navLabel ?? 'Current NAV (₹)'} (optional)`}
-                keyboardType="numeric"
-                value={currentNavText}
-                onChangeText={handleCurrentNavChange}
-                mode="outlined"
-                dense
-                error={!!errors.current_nav}
-                style={{ backgroundColor: theme.colors.surface }}
-              />
-              {!!errors.current_nav && <HelperText type="error">{errors.current_nav}</HelperText>}
-            </View>
-          )}
-          {cfg.showPricePerUnit && (
-            <View>
-              <TextInput
-                label={`${cfg.pricePerUnitLabel ?? 'Price per Unit (₹)'} *`}
-                keyboardType="numeric"
-                value={pricePerUnitText}
-                onChangeText={handlePricePerUnitChange}
-                mode="outlined"
-                dense
-                error={!!errors.price_per_unit}
-                style={{ backgroundColor: theme.colors.surface }}
-              />
-              {!!errors.price_per_unit && <HelperText type="error">{errors.price_per_unit}</HelperText>}
-            </View>
-          )}
-        </>
-      )}
-
-      {/* Invested + Current Value */}
-      <Row gap={12}>
-        <View style={{ flex: 1 }}>
+      {/* Single-column: one field per row */}
+      {cfg.showQuantity !== false && (
+        <View>
           <TextInput
-            label={`${cfg.investedLabel ?? 'Invested (₹)'} *`}
+            label={`${cfg.quantityLabel ?? 'Quantity / Units'} *`}
             keyboardType="numeric"
-            value={investedAmountText}
-            onChangeText={handleInvestedAmountChange}
+            value={quantityText}
+            onChangeText={handleQuantityChange}
             mode="outlined"
             dense
-            editable={cfg.slug !== 'equity'}
-            error={!!errors.invested_amount}
-            style={{
-              backgroundColor: cfg.slug === 'equity' ? theme.colors.surfaceVariant : theme.colors.surface,
-              opacity: cfg.slug === 'equity' ? 0.72 : 1,
-            }}
-          />
-          {cfg.slug === 'equity' && (
-            <HelperText type="info" style={{ marginTop: -2, paddingHorizontal: 4 }}>
-              Auto = shares × buy price
-            </HelperText>
-          )}
-          {!!errors.invested_amount && <HelperText type="error">{errors.invested_amount}</HelperText>}
-        </View>
-        <View style={{ flex: 1 }}>
-          <TextInput
-            label={`${cfg.currentValueLabel ?? 'Current value (₹)'} *`}
-            keyboardType="numeric"
-            value={currentValueText}
-            onChangeText={handleCurrentValueChange}
-            mode="outlined"
-            dense
-            error={!!errors.current_value}
+            error={!!errors.quantity}
             style={{ backgroundColor: theme.colors.surface }}
           />
-          {!!errors.current_value && <HelperText type="error">{errors.current_value}</HelperText>}
+          {!!errors.quantity && <HelperText type="error">{errors.quantity}</HelperText>}
         </View>
-      </Row>
+      )}
+      {cfg.showNav && (
+        <View>
+          <TextInput
+            label={`${cfg.navLabel ?? 'Current NAV (₹)'} (optional)`}
+            keyboardType="numeric"
+            value={currentNavText}
+            onChangeText={handleCurrentNavChange}
+            mode="outlined"
+            dense
+            error={!!errors.current_nav}
+            style={{ backgroundColor: theme.colors.surface }}
+          />
+          {!!errors.current_nav && <HelperText type="error">{errors.current_nav}</HelperText>}
+        </View>
+      )}
+      {cfg.showPricePerUnit && (
+        <View>
+          <TextInput
+            label={`${cfg.pricePerUnitLabel ?? 'Price per Unit (₹)'} *`}
+            keyboardType="numeric"
+            value={pricePerUnitText}
+            onChangeText={handlePricePerUnitChange}
+            mode="outlined"
+            dense
+            error={!!errors.price_per_unit}
+            style={{ backgroundColor: theme.colors.surface }}
+          />
+          {!!errors.price_per_unit && <HelperText type="error">{errors.price_per_unit}</HelperText>}
+        </View>
+      )}
 
-      {/* Investment date + Coupon rate / Monthly SIP */}
-      {cfg.showGuaranteedReturn || (sipEligible && form.is_sip) ? (
-        <Row gap={12}>
-          <View style={{ flex: 1 }}>
-            <DatePickerField
-              label={`${cfg.investmentDateLabel ?? 'Investment date'} *`}
-              value={form.investment_date}
-              onChange={(d) => set('investment_date', d)}
-              error={errors.investment_date}
-              clearable
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            {cfg.showGuaranteedReturn && (
-              <View>
-                <TextInput
-                  label={`${cfg.guaranteedReturnLabel ?? 'Guaranteed Return %'} *`}
-                  keyboardType="numeric"
-                  value={form.guaranteed_return_pct !== null ? String(form.guaranteed_return_pct) : ''}
-                  onChangeText={(v) => set('guaranteed_return_pct', parseFloat(v) || null)}
-                  mode="outlined"
-                  dense
-                  error={!!errors.guaranteed_return_pct}
-                  style={{ backgroundColor: theme.colors.surface }}
-                />
-                {!!errors.guaranteed_return_pct && <HelperText type="error">{errors.guaranteed_return_pct}</HelperText>}
-              </View>
-            )}
-            {sipEligible && form.is_sip && (
-              <View>
-                <TextInput
-                  label={`${cfg.sipMonthlyLabel ?? 'Monthly SIP (₹)'} (optional)`}
-                  keyboardType="numeric"
-                  value={sipMonthlyAmountText}
-                  onChangeText={handleSipMonthlyAmountChange}
-                  mode="outlined"
-                  dense
-                  error={!!errors.sip_monthly_amount}
-                  style={{ backgroundColor: theme.colors.surface }}
-                />
-                {!!errors.sip_monthly_amount && <HelperText type="error">{errors.sip_monthly_amount}</HelperText>}
-              </View>
-            )}
-          </View>
-        </Row>
-      ) : (
-        <DatePickerField
-          label={`${cfg.investmentDateLabel ?? 'Investment date'} *`}
-          value={form.investment_date}
-          onChange={(d) => set('investment_date', d)}
-          error={errors.investment_date}
-          clearable
+      {/* Invested (single-column) */}
+      <View>
+        <TextInput
+          label={`${cfg.investedLabel ?? 'Invested (₹)'} *`}
+          keyboardType="numeric"
+          value={investedAmountText}
+          onChangeText={handleInvestedAmountChange}
+          mode="outlined"
+          dense
+          editable={cfg.slug !== 'equity'}
+          error={!!errors.invested_amount}
+          style={{
+            backgroundColor: cfg.slug === 'equity' ? theme.colors.surfaceVariant : theme.colors.surface,
+            opacity: cfg.slug === 'equity' ? 0.72 : 1,
+          }}
         />
+        {cfg.slug === 'equity' && (
+          <HelperText type="info" style={{ marginTop: -2, paddingHorizontal: 4 }}>
+            Auto = shares × buy price
+          </HelperText>
+        )}
+        {!!errors.invested_amount && <HelperText type="error">{errors.invested_amount}</HelperText>}
+      </View>
+      {/* Current Value (single-column) */}
+      <View>
+        <TextInput
+          label={`${cfg.currentValueLabel ?? 'Current value (₹)'} *`}
+          keyboardType="numeric"
+          value={currentValueText}
+          onChangeText={handleCurrentValueChange}
+          mode="outlined"
+          dense
+          error={!!errors.current_value}
+          style={{ backgroundColor: theme.colors.surface }}
+        />
+        {!!errors.current_value && <HelperText type="error">{errors.current_value}</HelperText>}
+      </View>
+
+      {/* Investment date (single-column) */}
+      <DatePickerField
+        label={`${cfg.investmentDateLabel ?? 'Investment date'} *`}
+        value={form.investment_date}
+        onChange={(d) => set('investment_date', d)}
+        error={errors.investment_date}
+        clearable
+      />
+      {cfg.showGuaranteedReturn && (
+        <View>
+          <TextInput
+            label={`${cfg.guaranteedReturnLabel ?? 'Guaranteed Return %'} *`}
+            keyboardType="numeric"
+            value={form.guaranteed_return_pct !== null ? String(form.guaranteed_return_pct) : ''}
+            onChangeText={(v) => set('guaranteed_return_pct', parseFloat(v) || null)}
+            mode="outlined"
+            dense
+            error={!!errors.guaranteed_return_pct}
+            style={{ backgroundColor: theme.colors.surface }}
+          />
+          {!!errors.guaranteed_return_pct && <HelperText type="error">{errors.guaranteed_return_pct}</HelperText>}
+        </View>
+      )}
+      {sipEligible && form.is_sip && (
+        <View>
+          <TextInput
+            label={`${cfg.sipMonthlyLabel ?? 'Monthly SIP (₹)'} (optional)`}
+            keyboardType="numeric"
+            value={sipMonthlyAmountText}
+            onChangeText={handleSipMonthlyAmountChange}
+            mode="outlined"
+            dense
+            error={!!errors.sip_monthly_amount}
+            style={{ backgroundColor: theme.colors.surface }}
+          />
+          {!!errors.sip_monthly_amount && <HelperText type="error">{errors.sip_monthly_amount}</HelperText>}
+        </View>
       )}
 
       {/* Maturity date */}
@@ -874,6 +758,24 @@ const AssetForm: React.FC<AssetFormProps> = ({
         numberOfLines={2}
         style={{ backgroundColor: theme.colors.surface }}
       />
+
+      {/* Attachments */}
+      <View style={{ marginTop: 6 }}>
+        {assetId ? (
+          <AttachmentsSection
+            userId={userId ?? ''}
+            table="asset_images"
+            ownerColumn="asset_id"
+            ownerId={assetId}
+          />
+        ) : (
+          <AttachmentsSection
+            userId={userId ?? ''}
+            pending={pendingAttachments}
+            onPendingChange={setPendingAttachments}
+          />
+        )}
+      </View>
     </View>
   );
 

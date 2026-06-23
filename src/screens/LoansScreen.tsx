@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useLayoutEffect } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
+import { useNavigation } from 'expo-router';
 import {
   Button,
   Card,
@@ -21,6 +22,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BouncePressable from '../components/BouncePressable';
+import NotificationBell from '../components/NotificationBell';
+import AttachmentsSection from '../components/AttachmentsSection';
+import type { PickedAttachment } from '../services/attachments';
 
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
@@ -33,6 +37,7 @@ import {
   totalInterestPayable,
   debtHealth,
 } from '../services/finance';
+import { generateLoanNotifications } from '../services/notificationService';
 import { LOAN_TYPES, LOAN_TYPE_LABELS, LOAN_TYPE_COLORS, titleCase } from '../services/constants';
 import { Screen, SectionCard, StatusChip, ProgressBar, LineItem, EmptyState } from '../components/ui';
 import { palette } from '../theme';
@@ -68,16 +73,38 @@ const LoansScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
 
   const loans = useData(() =>
     all<Loan>('SELECT * FROM loans WHERE user_id = ? ORDER BY created_at DESC', [userId!]),
   );
+
+  // Generate EMI due/overdue notifications whenever loan data changes
+  useData(() => {
+    try { generateLoanNotifications(userId!); } catch { /* non-critical */ }
+    return null;
+  });
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          <NotificationBell
+            kinds={['emi_due', 'emi_overdue']}
+            color={theme.colors.onSurface}
+          />
+        </View>
+      ),
+    });
+  }, [navigation, theme]);
   const summary = useData(() => loanSummary(userId!));
   const debt = useData(() => debtHealth(userId!));
 
   const [addOpen, setAddOpen] = useState(false);
   const [editLoanId, setEditLoanId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...blank });
+  // Attachments collected while adding a new loan (persisted after insert).
+  const [loanAttachments, setLoanAttachments] = useState<PickedAttachment[]>([]);
   const [typeMenu, setTypeMenu] = useState(false);
   const [intTypeMenu, setIntTypeMenu] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -138,17 +165,32 @@ const LoansScreen: React.FC = () => {
       );
       setEditLoanId(null);
     } else {
+      const loanId = newId();
+      const now = nowISO();
       insert('loans', {
-        id: newId(),
+        id: loanId,
         user_id: userId!,
         ...data,
         prepayment_total: 0,
         status: 'active',
-        created_at: nowISO(),
+        created_at: now,
       });
+      // Persist attachments collected in the form now that the loan row exists.
+      for (const att of loanAttachments) {
+        insert('loan_images', {
+          id: newId(),
+          loan_id: loanId,
+          user_id: userId!,
+          uri: att.uri,
+          label: att.label,
+          created_at: now,
+          local_path: att.local_path,
+        });
+      }
     }
 
     setForm({ ...blank });
+    setLoanAttachments([]);
     setAddOpen(false);
     refresh();
   };
@@ -686,6 +728,16 @@ const LoansScreen: React.FC = () => {
                       {l.end_date        && <LineItem label="End Date"       value={l.end_date} />}
                       {l.next_due_date   && <LineItem label="Next Due"       value={l.next_due_date} />}
                       {l.notes           && <LineItem label="Notes"          value={l.notes} />}
+
+                      {/* Document attachments */}
+                      <View style={{ marginTop: 12 }}>
+                        <AttachmentsSection
+                          userId={userId!}
+                          table="loan_images"
+                          ownerColumn="loan_id"
+                          ownerId={l.id}
+                        />
+                      </View>
                     </View>
                   )}
 
@@ -713,6 +765,7 @@ const LoansScreen: React.FC = () => {
         onPress={() => {
           setForm({ ...blank });
           setEditLoanId(null);
+          setLoanAttachments([]);
           setAddOpen(true);
         }}
         style={{
@@ -860,6 +913,24 @@ const LoansScreen: React.FC = () => {
             )}
 
             <TextInput label="Notes" value={form.notes} onChangeText={(v) => set('notes', v)} mode="outlined" dense style={{ marginBottom: 8 }} />
+
+            {/* Attachments (Sanction Letter, Repayment Schedule, EMI documents…) */}
+            <View style={{ marginTop: 8, marginBottom: 4 }}>
+              {editLoanId ? (
+                <AttachmentsSection
+                  userId={userId!}
+                  table="loan_images"
+                  ownerColumn="loan_id"
+                  ownerId={editLoanId}
+                />
+              ) : (
+                <AttachmentsSection
+                  userId={userId!}
+                  pending={loanAttachments}
+                  onPendingChange={setLoanAttachments}
+                />
+              )}
+            </View>
 
             <HelperText type={form.original_amount.trim() && form.outstanding_amount.trim() ? 'info' : 'error'} visible>
               Loan Amount and Outstanding Amount are required.

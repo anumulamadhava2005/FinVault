@@ -1,11 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useRouter, useNavigation } from 'expo-router';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, ScrollView, TouchableOpacity, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import BouncePressable from '../components/BouncePressable';
+import NotificationBell from '../components/NotificationBell';
 import { DistributionPie, TrendLine } from '../components/charts';
 import { Kpi, LineItem, ProgressBar, Row, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
@@ -20,6 +21,7 @@ import {
   spendingInsights,
   upcomingSips,
 } from '../services/finance';
+import { generateAllNotifications } from '../services/notificationService';
 import { chartColors, palette, statusColor } from '../theme';
 import { addMonths, localISODate, parseISO } from '../utils/date';
 import { formatINR, formatINRCompact, scoreColor } from '../utils/money';
@@ -78,6 +80,25 @@ const DashboardScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
   const router = useRouter();
+  const navigation = useNavigation();
+
+  // The Dashboard is the unified notification hub: aggregate alerts from every
+  // module (assets, expenses, goals, loans, insurance) whenever data changes.
+  useData(() => {
+    const now = new Date();
+    try { generateAllNotifications(userId!, now.getFullYear(), now.getMonth() + 1); } catch { /* non-critical */ }
+    return null;
+  });
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          <NotificationBell color={theme.colors.onSurface} />
+        </View>
+      ),
+    });
+  }, [navigation, theme]);
 
   // Collapsible states
   const [expIncExp, setExpIncExp] = useState(false);

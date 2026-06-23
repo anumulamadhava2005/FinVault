@@ -88,8 +88,8 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
       }}
     >
       {/* Top Header Row */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 44 }}>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           {selectMode ? (
             <Checkbox
               status={selected ? 'checked' : 'unchecked'}
@@ -98,30 +98,30 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
           ) : (
             <View
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
+                width: 40,
+                height: 40,
+                borderRadius: 20,
                 backgroundColor: theme.colors.surfaceVariant,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <MaterialCommunityIcons name={cfg.icon as any} size={16} color={theme.colors.primary} />
+              <MaterialCommunityIcons name={cfg.icon as any} size={20} color={theme.colors.primary} />
             </View>
           )}
-          
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <Text variant="titleSmall" style={{ fontWeight: '700', color: theme.colors.onSurface }} numberOfLines={1}>
+
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }} numberOfLines={1}>
                 {a.name}
               </Text>
               <View style={{
-                paddingHorizontal: 5,
-                paddingVertical: 1.5,
-                borderRadius: 4,
+                paddingHorizontal: 7,
+                paddingVertical: 2.5,
+                borderRadius: 5,
                 backgroundColor: theme.colors.surfaceVariant,
               }}>
-                <Text style={{ fontSize: 9, fontWeight: '800', color: theme.colors.primary }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: theme.colors.primary }}>
                   {getShortName(a.type_name)}
                 </Text>
               </View>
@@ -129,9 +129,9 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
 
             {/* Performance indicator line */}
             {perf && !selectMode && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 }}>
-                <MaterialCommunityIcons name={perf.icon} size={11} color={perf.color} />
-                <Text variant="labelSmall" style={{ fontSize: 9, color: perf.color, fontWeight: '600' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 }}>
+                <MaterialCommunityIcons name={perf.icon} size={13} color={perf.color} />
+                <Text variant="labelSmall" style={{ fontSize: 11, color: perf.color, fontWeight: '600' }}>
                   {perf.label}
                 </Text>
               </View>
@@ -141,34 +141,35 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
 
         {/* Collapsed Valuation Stats */}
         <View style={{ alignItems: 'flex-end' }}>
-          <Text variant="titleSmall" style={{ fontWeight: '800', color: theme.colors.onSurface }}>
+          <Text variant="titleMedium" style={{ fontWeight: '800', color: theme.colors.onSurface, fontVariant: ['tabular-nums'] }}>
             {formatINR(a.current_value)}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 }}>
             <MaterialCommunityIcons
               name={pnl >= 0 ? 'arrow-up-bold' : 'arrow-down-bold'}
-              size={12}
+              size={14}
               color={pnl >= 0 ? palette.good : palette.danger}
             />
             <Text
-              variant="labelSmall"
+              variant="labelMedium"
               style={{
                 color: pnl >= 0 ? palette.good : palette.danger,
                 fontWeight: '700',
-                fontSize: 10,
+                fontSize: 12,
+                fontVariant: ['tabular-nums'],
               }}
             >
               {pnl >= 0 ? '+' : ''}{pnlPercent}%
             </Text>
           </View>
         </View>
-        
+
         {!selectMode && (
           <MaterialCommunityIcons
             name={expanded ? 'chevron-up' : 'chevron-down'}
-            size={18}
+            size={20}
             color={theme.colors.onSurfaceVariant}
-            style={{ marginLeft: 8 }}
+            style={{ marginLeft: 10 }}
           />
         )}
       </View>

@@ -527,7 +527,7 @@ const AssetsScreen: React.FC = () => {
             />
           </SectionCard>
         ) : (
-          <View style={{ marginTop: 10, paddingHorizontal: 18, paddingBottom: 100 }}>
+          <View style={{ marginTop: 10, paddingBottom: 100 }}>
             {filteredAssets.map((a) => (
               <AssetRow
                 key={a.id}

@@ -9,6 +9,7 @@ import { all, insert, newId } from '../../db';
 import type { AssetType } from '../../models/types';
 import { Screen, SectionCard, EmptyState } from '../../components/ui';
 import AssetForm, { AssetFormValues } from '../../components/assets/AssetForm';
+import type { PickedAttachment } from '../../services/attachments';
 import { nowISO } from '../../utils/date';
 
 const AddAssetScreen: React.FC = () => {
@@ -43,12 +44,14 @@ const AddAssetScreen: React.FC = () => {
     );
   }
 
-  const handleSave = (values: AssetFormValues) => {
+  const handleSave = (values: AssetFormValues, attachments: PickedAttachment[]) => {
     const typeId = values.asset_type_id || assetTypes[0]?.id;
     if (!values.name.trim() || !typeId) return;
 
+    const assetId = newId();
+    const now = nowISO();
     insert('assets', {
-      id: newId(),
+      id: assetId,
       user_id: userId!,
       asset_type_id: typeId,
       name: values.name.trim(),
@@ -67,8 +70,21 @@ const AddAssetScreen: React.FC = () => {
       sip_monthly_amount: values.sip_monthly_amount ?? 0,
       notes: values.notes,
       details_json: values.details_json,
-      created_at: nowISO(),
+      created_at: now,
     });
+
+    // Persist attachments collected in the form now that the asset row exists.
+    for (const att of attachments) {
+      insert('asset_images', {
+        id: newId(),
+        asset_id: assetId,
+        user_id: userId!,
+        uri: att.uri,
+        label: att.label,
+        created_at: now,
+        local_path: att.local_path,
+      });
+    }
 
     refresh();
     router.back();

@@ -27,6 +27,13 @@ const KIND_ICONS: Record<string, string> = {
   goal_deadline: 'calendar-alert',
   goal_behind: 'alert',
   goal_overdue: 'alert-circle',
+  budget_exceeded: 'cash-remove',
+  emi_due: 'calendar-clock',
+  emi_overdue: 'alert-circle',
+  premium_due: 'shield-alert-outline',
+  policy_expiring: 'shield-sync-outline',
+  policy_expired: 'shield-off-outline',
+  reminder: 'bell-outline',
   info: 'information-outline',
 };
 
@@ -39,6 +46,13 @@ const KIND_COLORS: Record<string, string> = {
   goal_deadline: palette.warn,
   goal_behind: palette.warn,
   goal_overdue: palette.danger,
+  budget_exceeded: palette.danger,
+  emi_due: palette.warn,
+  emi_overdue: palette.danger,
+  premium_due: palette.warn,
+  policy_expiring: palette.warn,
+  policy_expired: palette.danger,
+  reminder: palette.warn,
   info: '#71717A',
 };
 

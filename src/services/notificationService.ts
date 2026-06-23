@@ -4,7 +4,7 @@
  * based on asset milestones, SIP due dates, and goal status.
  */
 import { all, first, insert, newId, run } from '../db';
-import type { Asset, FinancialGoal, SIPSchedule } from '../models/types';
+import type { Asset, FinancialGoal, SIPSchedule, Loan, InsurancePolicy } from '../models/types';
 import { goalsProgress, GOAL_STATUS_META } from './finance';
 import { daysBetween, nowISO, parseISO, todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
@@ -150,7 +150,7 @@ export const generateExpenseNotifications = (
   month: number,
 ): void => {
   const categories = all<{ id: string; name: string; budget_amount: number }>(
-    'SELECT id, name, budget_amount FROM expense_categories WHERE (user_id = ? OR is_system = 1) AND budget_amount > 0',
+    'SELECT id, name, budget_amount FROM expense_categories WHERE (user_id = ? OR (is_system = 1 AND user_id IS NULL)) AND budget_amount > 0',
     [userId],
   );
 
@@ -236,4 +236,128 @@ export const generateGoalNotifications = (userId: string): void => {
       );
     }
   }
+};
+
+// ─── Loan EMI notifications ─────────────────────────────────────────────────
+
+const LOAN_TYPE_LABELS: Record<string, string> = {
+  home: 'Home loan',
+  education: 'Education loan',
+  vehicle: 'Vehicle loan',
+  personal: 'Personal loan',
+  credit_card: 'Credit card',
+  gold: 'Gold loan',
+  business: 'Business loan',
+  other: 'Loan',
+};
+
+const loanLabel = (l: Loan): string => {
+  const base = LOAN_TYPE_LABELS[l.loan_type] ?? 'Loan';
+  return l.provider ? `${l.provider} ${base.toLowerCase()}` : base;
+};
+
+export const generateLoanNotifications = (userId: string): void => {
+  const today = new Date(todayISO() + 'T00:00:00');
+
+  const loans = all<Loan>(
+    `SELECT * FROM loans
+     WHERE user_id = ? AND status != 'closed' AND next_due_date IS NOT NULL AND emi_amount > 0`,
+    [userId],
+  );
+
+  for (const loan of loans) {
+    const due = parseISO(loan.next_due_date);
+    if (!due) continue;
+    const daysUntil = daysBetween(today, due);
+    const label = loanLabel(loan);
+    const emi = formatINR(loan.emi_amount);
+
+    if (daysUntil < 0) {
+      notify(
+        userId,
+        `${label} EMI overdue`,
+        `Your EMI of ${emi} was due on ${loan.next_due_date}. Please pay to avoid penalties.`,
+        'emi_overdue',
+      );
+    } else if (daysUntil === 0) {
+      notify(userId, `${label} EMI due today`, `Your EMI of ${emi} is due today.`, 'emi_due');
+    } else if (daysUntil === 1) {
+      notify(userId, `${label} EMI due tomorrow`, `Your EMI of ${emi} is due tomorrow.`, 'emi_due');
+    } else if (daysUntil === 3) {
+      notify(userId, `${label} EMI due in 3 days`, `Your EMI of ${emi} is due in 3 days.`, 'emi_due');
+    } else if (daysUntil === 7) {
+      notify(userId, `${label} EMI due in 7 days`, `Your EMI of ${emi} is due in 7 days.`, 'emi_due');
+    }
+  }
+};
+
+// ─── Insurance premium & expiry notifications ───────────────────────────────
+
+export const generateInsuranceNotifications = (userId: string): void => {
+  const today = new Date(todayISO() + 'T00:00:00');
+
+  const policies = all<InsurancePolicy>(
+    `SELECT * FROM insurance_policies WHERE user_id = ? AND status != 'lapsed'`,
+    [userId],
+  );
+
+  for (const p of policies) {
+    const name = p.policy_name || p.provider || 'Policy';
+
+    // Premium due reminders
+    if (p.next_due_date && p.premium_amount > 0) {
+      const due = parseISO(p.next_due_date);
+      if (due) {
+        const daysUntil = daysBetween(today, due);
+        const premium = formatINR(p.premium_amount);
+        if (daysUntil === 0) {
+          notify(userId, `${name} premium due today`, `Premium of ${premium} is due today.`, 'premium_due');
+        } else if (daysUntil === 1) {
+          notify(userId, `${name} premium due tomorrow`, `Premium of ${premium} is due tomorrow.`, 'premium_due');
+        } else if (daysUntil === 3) {
+          notify(userId, `${name} premium due in 3 days`, `Premium of ${premium} is due in 3 days.`, 'premium_due');
+        } else if (daysUntil === 7) {
+          notify(userId, `${name} premium due in 7 days`, `Premium of ${premium} is due in 7 days.`, 'premium_due');
+        }
+      }
+    }
+
+    // Policy expiry reminders
+    if (p.expiry_date) {
+      const expiry = parseISO(p.expiry_date);
+      if (expiry) {
+        const daysUntil = daysBetween(today, expiry);
+        if (daysUntil < 0) {
+          notify(
+            userId,
+            `${name} policy expired`,
+            `This policy expired on ${p.expiry_date}. Renew to stay covered.`,
+            'policy_expired',
+          );
+        } else if (daysUntil >= 0 && daysUntil <= 30) {
+          const when = daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`;
+          notify(
+            userId,
+            `${name} policy expiring soon`,
+            `This policy expires ${when} (${p.expiry_date}). Renew to stay covered.`,
+            'policy_expiring',
+          );
+        }
+      }
+    }
+  }
+};
+
+// ─── Aggregate generator (Dashboard notification hub) ───────────────────────
+
+/**
+ * Runs every notification generator. Used by the Dashboard, which acts as the
+ * unified notification center aggregating alerts from all modules.
+ */
+export const generateAllNotifications = (userId: string, year: number, month: number): void => {
+  try { generateAssetNotifications(userId); } catch { /* non-critical */ }
+  try { generateExpenseNotifications(userId, year, month); } catch { /* non-critical */ }
+  try { generateGoalNotifications(userId); } catch { /* non-critical */ }
+  try { generateLoanNotifications(userId); } catch { /* non-critical */ }
+  try { generateInsuranceNotifications(userId); } catch { /* non-critical */ }
 };

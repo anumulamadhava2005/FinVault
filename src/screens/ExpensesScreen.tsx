@@ -12,6 +12,7 @@ import * as Sharing from 'expo-sharing';
 import { useNavigation } from 'expo-router';
 import BouncePressable from '../components/BouncePressable';
 import NotificationBell from '../components/NotificationBell';
+import { ZoomableImage } from '../components/ImageLightbox';
 import { DistributionPie, TrendLine } from '../components/charts';
 import { EmptyState, Kpi, LineItem, ProgressBar, Row, Screen, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
@@ -91,7 +92,23 @@ const ExpensesScreen: React.FC = () => {
     }
   };
 
-  const categories = useData(() => all<ExpenseCategory>('SELECT * FROM expense_categories WHERE user_id = ? OR is_system = 1 ORDER BY sort_order', [userId!]));
+  // Scope to the current user. System categories are seeded per-user (user_id set),
+  // so `OR is_system = 1` previously pulled in OTHER profiles' system categories,
+  // producing duplicate names. The `user_id IS NULL` clause keeps any legacy
+  // global system categories. Dedupe by name as a final safety net.
+  const categories = useData(() => {
+    const rows = all<ExpenseCategory>(
+      'SELECT * FROM expense_categories WHERE user_id = ? OR (is_system = 1 AND user_id IS NULL) ORDER BY sort_order',
+      [userId!],
+    );
+    const seen = new Set<string>();
+    return rows.filter((c) => {
+      const key = c.name.trim().toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
   const expenses = useData(() =>
     all<Expense & { cat_name: string; color_hex: string }>(
       `SELECT e.*, c.name AS cat_name, c.color_hex
@@ -412,7 +429,7 @@ const ExpensesScreen: React.FC = () => {
       return;
     }
 
-    const allCats = all<ExpenseCategory>('SELECT * FROM expense_categories');
+    const allCats = all<ExpenseCategory>('SELECT * FROM expense_categories WHERE user_id = ?', [userId!]);
     const catIndex = new Map<string, string>();
     for (const c of allCats) {
       catIndex.set(c.name.toLowerCase(), c.id);
@@ -1423,11 +1440,9 @@ const ExpensesScreen: React.FC = () => {
             alignItems: 'center'
           }}>
             {lightboxUri && (
-              <Image
-                source={{ uri: lightboxUri }}
-                style={{ width: '100%', height: '80%' }}
-                contentFit="contain"
-              />
+              <View style={{ width: '100%', height: '80%' }}>
+                <ZoomableImage uri={lightboxUri} />
+              </View>
             )}
             
             <View style={{
