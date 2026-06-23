@@ -24,6 +24,8 @@ import {
   upcomingSips,
 } from '../services/finance';
 import { generateAllNotifications } from '../services/notificationService';
+import { captureNetWorthSnapshot } from '../services/wealthRecap';
+import { refreshMarketData } from '../services/marketFeeds';
 import { chartColors, palette, statusColor } from '../theme';
 import { addMonths, localISODate, parseISO } from '../utils/date';
 import { formatINR, formatINRCompact, scoreColor } from '../utils/money';
@@ -89,8 +91,14 @@ const DashboardScreen: React.FC = () => {
   useData(() => {
     const now = new Date();
     try { generateAllNotifications(userId!, now.getFullYear(), now.getMonth() + 1); } catch { /* non-critical */ }
+    try { captureNetWorthSnapshot(userId!); } catch { /* non-critical */ }
     return null;
   });
+
+  // Keep the live market snapshot warm for the Insights/Feed screens.
+  useEffect(() => {
+    refreshMarketData().catch(() => { /* offline — cached values are used */ });
+  }, []);
 
   useLayoutEffect(() => {
     navigation.setOptions({

@@ -78,8 +78,8 @@ export const RISK_TARGET: Record<string, number> = {
   aggressive: 70,
 };
 
-export const EQUITY_TYPES = new Set(['Equity', 'Mutual Funds', 'Mutual Fund', 'Real Estate', 'Crypto', 'Stocks']);
-export const LIQUID_TYPES = new Set(['Savings', 'Fixed Deposit', 'Gold', 'Digital Gold', 'Mutual Funds', 'Cash']);
+export const EQUITY_TYPES = new Set(['Equity', 'Mutual Funds', 'Mutual Fund', 'Real Estate', 'Crypto', 'Stocks', 'NPS']);
+export const LIQUID_TYPES = new Set(['Savings', 'Fixed Deposit', 'Gold', 'Digital Gold', 'Mutual Funds', 'Cash', 'Bank Account']);
 
 export const HIGH_INTEREST_PCT = 12.0;
 
@@ -96,7 +96,7 @@ export const BENCH_CLASS: Record<string, string> = {
 export const titleCase = (s: string) =>
   s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-export const SIP_ELIGIBLE_TYPES = new Set(['mutual_fund', 'equity', 'digital_gold', 'ppf']);
+export const SIP_ELIGIBLE_TYPES = new Set(['mutual_fund', 'equity', 'digital_gold', 'ppf', 'nps']);
 
 export const ASSET_TYPE_KEY_MAP: Record<string, string> = {
   mutual_fund: 'Mutual Funds',
@@ -107,4 +107,6 @@ export const ASSET_TYPE_KEY_MAP: Record<string, string> = {
   sgb: 'Sovereign Gold Bond',
   ppf: 'PPF',
   real_estate: 'Real Estate',
+  nps: 'NPS',
+  savings: 'Bank Account',
 };

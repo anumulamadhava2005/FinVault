@@ -250,4 +250,21 @@ CREATE TABLE IF NOT EXISTS notifications (
   is_read INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS networth_snapshots (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ym TEXT NOT NULL,                       -- 'YYYY-MM'
+  net_worth INTEGER NOT NULL DEFAULT 0,
+  total_assets INTEGER NOT NULL DEFAULT 0,
+  total_liabilities INTEGER NOT NULL DEFAULT 0,
+  captured_at TEXT NOT NULL,
+  UNIQUE (user_id, ym)
+);
+
+CREATE TABLE IF NOT EXISTS market_cache (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;

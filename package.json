@@ -5,10 +5,10 @@
   "dependencies": {
     "@expo/ui": "~56.0.18",
     "@expo/vector-icons": "^15.0.2",
+    "@dariyd/react-native-text-recognition": "^1.0.0",
     "@pdfsmaller/pdf-encrypt-lite": "^1.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.1.0",
-"@react-native-ml-kit/text-recognition": "^2.0.0",
     "@react-navigation/drawer": "^7.12.2",
     "expo": "~56.0.12",
     "expo-constants": "~56.0.18",

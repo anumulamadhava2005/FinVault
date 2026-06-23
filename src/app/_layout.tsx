@@ -46,10 +46,14 @@ const CustomDrawer = (props: any) => {
 
   const menuItems = [
     { section: 'FINANCES', route: 'index', label: 'Dashboard', icon: 'view-dashboard' },
+    { section: 'FINANCES', route: 'insights', label: 'Insights', icon: 'lightbulb-on' },
+    { section: 'FINANCES', route: 'feed', label: 'Wealth Feed', icon: 'newspaper-variant-outline' },
     { section: 'FINANCES', route: 'assets', label: 'Assets', icon: 'chart-line' },
     { section: 'FINANCES', route: 'expenses', label: 'Expenses', icon: 'cash-multiple' },
     { section: 'FINANCES', route: 'loans', label: 'Loans', icon: 'bank' },
     { section: 'FINANCES', route: 'goals', label: 'Goals', icon: 'flag-checkered' },
+    { section: 'FINANCES', route: 'recap', label: 'Wealth Recap', icon: 'calendar-star' },
+    { section: 'FINANCES', route: 'retirement', label: 'Retirement', icon: 'island' },
     { section: 'FINANCES', route: 'reports', label: 'Reports', icon: 'file-chart' },
     
     { section: 'SECURITY', route: 'vault', label: 'Secure Vault', icon: 'lock', count: vaultCount > 0 ? `${vaultCount} credentials` : 'Encrypted' },
@@ -233,10 +237,14 @@ const CustomDrawer = (props: any) => {
         <View>
           {renderSectionHeader('FINANCES')}
           {renderMenuItem('index', 'Dashboard', 'view-dashboard')}
+          {renderMenuItem('insights', 'Insights', 'lightbulb-on')}
+          {renderMenuItem('feed', 'Wealth Feed', 'newspaper-variant-outline')}
           {renderMenuItem('assets', 'Assets', 'chart-line')}
           {renderMenuItem('expenses', 'Expenses', 'cash-multiple')}
           {renderMenuItem('loans', 'Loans', 'bank')}
           {renderMenuItem('goals', 'Goals', 'flag-checkered')}
+          {renderMenuItem('recap', 'Wealth Recap', 'calendar-star')}
+          {renderMenuItem('retirement', 'Retirement', 'island')}
           {renderMenuItem('reports', 'Reports', 'file-chart')}
 
           <Divider style={{ marginVertical: 6, marginHorizontal: 12, opacity: 0.3 }} />
@@ -1032,6 +1040,8 @@ const Navigator: React.FC = () => {
         }}
       >
         <Drawer.Screen name="index" options={{ title: 'Dashboard', drawerIcon: drawerIcon('view-dashboard') }} />
+        <Drawer.Screen name="insights" options={{ title: 'Insights', drawerIcon: drawerIcon('lightbulb-on') }} />
+        <Drawer.Screen name="feed" options={{ title: 'Wealth Feed', drawerIcon: drawerIcon('newspaper-variant-outline') }} />
         <Drawer.Screen name="assets" options={{ title: 'Assets', drawerIcon: drawerIcon('chart-line'), headerShown: false }} />
         <Drawer.Screen name="expenses" options={{ title: 'Expenses', drawerIcon: drawerIcon('cash-multiple') }} />
         <Drawer.Screen name="loans" options={{ title: 'Loans', drawerIcon: drawerIcon('bank') }} />
@@ -1039,6 +1049,8 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="goals" options={{ title: 'Goals', drawerIcon: drawerIcon('flag-checkered'), headerShown: false }} />
         <Drawer.Screen name="vault" options={{ title: 'Vault', drawerIcon: drawerIcon('lock') }} />
         <Drawer.Screen name="reports" options={{ title: 'Reports', drawerIcon: drawerIcon('file-chart') }} />
+        <Drawer.Screen name="recap" options={{ title: 'Wealth Recap', drawerIcon: drawerIcon('calendar-star') }} />
+        <Drawer.Screen name="retirement" options={{ title: 'Retirement', drawerIcon: drawerIcon('island') }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings', drawerIcon: drawerIcon('cog') }} />
       </Drawer>
     </PaperProvider>

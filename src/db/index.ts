@@ -52,6 +52,9 @@ const DATA_FIXES = [
   `UPDATE asset_types SET name = 'Digital Gold' WHERE slug = 'digital_gold' AND name != 'Digital Gold'`,
   // 4. Rename 'Physical Gold' to 'Gold'
   `UPDATE asset_types SET name = 'Gold' WHERE slug = 'physical_gold' AND name != 'Gold'`,
+  // 5. Ensure NPS and Bank Account asset types exist (fixed ids → idempotent).
+  `INSERT OR IGNORE INTO asset_types (id, name, slug, sort_order) VALUES ('type_nps', 'NPS', 'nps', 8)`,
+  `INSERT OR IGNORE INTO asset_types (id, name, slug, sort_order) VALUES ('type_savings', 'Bank Account', 'savings', 9)`,
 ];
 
 /** Initialise schema + seed once. Returns the single user's id or null. */

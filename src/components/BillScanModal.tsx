@@ -14,7 +14,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import TextRecognition from '@react-native-ml-kit/text-recognition';
+import TextRecognition from '@dariyd/react-native-text-recognition';
 
 import { useApp } from '../context/AppContext';
 import { all, insert, newId } from '../db';
@@ -119,11 +119,15 @@ const BillScanModal: React.FC<Props> = ({ visible, onClose, onSaved }) => {
     const persistentUri = await copyToPersistentStorage(captured.uri, captured.fileName || 'bill.jpg');
     setBillUri(persistentUri);
 
-    // Run OCR on the captured image.
+    // Run OCR on the captured image. @dariyd/react-native-text-recognition
+    // returns an array of recognized text blocks/lines, which we join into one
+    // string for the field parser. ML Kit (Android) / Vision (iOS) want a plain
+    // file path, so strip the file:// scheme.
     let text = '';
     try {
-      const ocr = await TextRecognition.recognize(captured.uri);
-      text = ocr?.text ?? '';
+      const path = captured.uri.replace(/^file:\/\//, '');
+      const blocks: string[] = await TextRecognition.recognize(path);
+      text = Array.isArray(blocks) ? blocks.join('\n') : String(blocks ?? '');
     } catch (err) {
       console.warn('OCR failed:', err);
       Alert.alert(
