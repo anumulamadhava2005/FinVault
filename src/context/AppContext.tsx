@@ -1,14 +1,23 @@
 /**
  * App-wide context: initializes SQLite DB, handles registration state,
  * manages biometric and password authentication gates, stores master passwords
- * in-memory for secure vault decryption, and triggers background asset price syncs.
+ * in SecureStore (encrypted OS keychain), and triggers background asset price syncs.
+ *
+ * Security changes vs. v1:
+ *  - Master password stored in expo-secure-store (OS keychain), not AsyncStorage.
+ *  - Password hashing uses salted v2 format (pbkdf2-lite, 1 000 rounds).
+ *    Legacy v1 hashes are transparently upgraded on next successful login.
+ *  - Auto-lock: AppState listener triggers logout after the user's configured
+ *    inactivity timeout when the app returns from background.
  */
-import React, { createContext, useContext, useMemo, useState, useEffect } from 'react';
+import React, { createContext, useContext, useMemo, useState, useEffect, useRef } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { useColorScheme } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { initDb, first, run, all, update, newId, getDb } from '../db';
-import { hashPassword } from '../utils/crypto';
+import { hashPassword, verifyPassword } from '../utils/crypto';
 import { seedDemoData, seedInitialMetadata } from '../db/seed';
 import { fetchEquityPrice, fetchMutualFundNav, fetchGoldPrice } from '../api/assets/assetsApi';
 import { nowISO } from '../utils/date';
@@ -16,7 +25,10 @@ import { nowISO } from '../utils/date';
 type ThemeMode = 'light' | 'dark' | 'system';
 type VaultLockMode = 'biometric' | 'password';
 
-interface AppState {
+// SecureStore keys are limited to alphanumeric + . _ -
+const secureKey = (userId: string) => `finvault_pw_${userId.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+interface AppState_ {
   ready: boolean;
   userId: string | null;
   isAuthenticated: boolean;
@@ -41,7 +53,7 @@ interface AppState {
     riskProfile: string,
     lockMode: VaultLockMode,
     seedDemo: boolean,
-    dob?: string
+    dob?: string,
   ) => Promise<boolean>;
   loginWithPassword: (password: string) => Promise<boolean>;
   loginWithBiometrics: () => Promise<boolean>;
@@ -51,7 +63,7 @@ interface AppState {
   isSyncing: boolean;
 }
 
-const Ctx = createContext<AppState | null>(null);
+const Ctx = createContext<AppState_ | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const system = useColorScheme();
@@ -67,26 +79,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [masterPassword, setMasterPassword] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Initialize the database on mount
+  // Tracks when the app moved to background for auto-lock calculation
+  const backgroundedAt = useRef<number | null>(null);
+
+  // ── DB init ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const setup = async () => {
-      const activeId = initDb();
-      const dbUsers = all<{ id: string; name: string; email: string }>('SELECT id, full_name as name, email FROM users');
+      initDb();
+      const dbUsers = all<{ id: string; name: string; email: string }>(
+        'SELECT id, full_name as name, email FROM users',
+      );
       setProfiles(dbUsers);
       setIsRegistered(dbUsers.length > 0);
 
       if (dbUsers.length > 0) {
         const savedActiveId = await AsyncStorage.getItem('@finvault_active_user_id');
-        const activeExists = savedActiveId ? dbUsers.some(u => u.id === savedActiveId) : false;
+        const activeExists = savedActiveId ? dbUsers.some((u) => u.id === savedActiveId) : false;
         const currentActiveId = activeExists ? savedActiveId! : dbUsers[0].id;
-        
+
         setUserId(currentActiveId);
         await AsyncStorage.setItem('@finvault_active_user_id', currentActiveId);
 
-        // Fetch user preferences
         const prefs = first<{ theme: ThemeMode; vault_lock_mode: VaultLockMode }>(
           'SELECT theme, vault_lock_mode FROM user_preferences WHERE user_id = ?',
-          [currentActiveId]
+          [currentActiveId],
         );
         if (prefs) {
           setThemeModeState(prefs.theme || 'system');
@@ -101,20 +117,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setup();
   }, [refreshKey]);
 
+  // ── Auto-lock on background / foreground ─────────────────────────────────
+  useEffect(() => {
+    if (!isAuthenticated || !userId) return;
+
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        backgroundedAt.current = Date.now();
+      } else if (nextState === 'active') {
+        if (backgroundedAt.current !== null) {
+          const elapsedMs = Date.now() - backgroundedAt.current;
+          backgroundedAt.current = null;
+
+          const prefs = first<{ auto_lock_minutes: number }>(
+            'SELECT auto_lock_minutes FROM user_preferences WHERE user_id = ?',
+            [userId],
+          );
+          const limitMs = (prefs?.auto_lock_minutes ?? 15) * 60 * 1000;
+          if (elapsedMs >= limitMs) {
+            setMasterPassword(null);
+            setIsAuthenticated(false);
+          }
+        }
+      }
+    };
+
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, [isAuthenticated, userId]);
+
   const refresh = () => setRefreshKey((k) => k + 1);
 
   const setThemeMode = (m: ThemeMode) => {
     setThemeModeState(m);
-    if (userId) {
-      run('UPDATE user_preferences SET theme = ? WHERE user_id = ?', [m, userId]);
-    }
+    if (userId) run('UPDATE user_preferences SET theme = ? WHERE user_id = ?', [m, userId]);
   };
 
   const setVaultLockMode = (mode: VaultLockMode) => {
     setVaultLockModeState(mode);
-    if (userId) {
+    if (userId)
       run('UPDATE user_preferences SET vault_lock_mode = ? WHERE user_id = ?', [mode, userId]);
-    }
   };
 
   const switchUser = async (targetId: string) => {
@@ -125,7 +167,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const prefs = first<{ theme: ThemeMode; vault_lock_mode: VaultLockMode }>(
       'SELECT theme, vault_lock_mode FROM user_preferences WHERE user_id = ?',
-      [targetId]
+      [targetId],
     );
     if (prefs) {
       setThemeModeState(prefs.theme || 'system');
@@ -138,6 +180,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isDark = themeMode === 'system' ? system === 'dark' : themeMode === 'dark';
 
+  // ── Sign-up ──────────────────────────────────────────────────────────────
   const signUp = async (
     name: string,
     email: string,
@@ -146,112 +189,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     riskProfile: string,
     lockMode: VaultLockMode,
     seedDemo: boolean,
-    dob?: string
+    dob?: string,
   ): Promise<boolean> => {
     const newUid = newId();
-    const hashedPassword = await hashPassword(password);
+    const hashedPassword = await hashPassword(password); // salted v2
     const dateStr = nowISO();
 
     try {
-      // 1. Insert User
       run(
         `INSERT INTO users (id, full_name, email, password_hash, risk_profile, monthly_income, date_of_birth, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [newUid, name, email, hashedPassword, riskProfile, income * 100, dob ?? null, dateStr]
+        [newUid, name, email, hashedPassword, riskProfile, income * 100, dob ?? null, dateStr],
       );
-
-      // 2. Insert User Preferences
       run(
-        `INSERT INTO user_preferences (user_id, theme, vault_lock_mode)
-         VALUES (?, ?, ?)`,
-        [newUid, 'system', lockMode]
+        `INSERT INTO user_preferences (user_id, theme, vault_lock_mode) VALUES (?, ?, ?)`,
+        [newUid, 'system', lockMode],
       );
 
-      // 3. Seed appropriate data
       if (seedDemo) {
         seedDemoData(getDb(), newUid, password);
       } else {
         seedInitialMetadata(getDb(), newUid);
       }
 
-      // 4. Save Master Password securely in local storage
-      await AsyncStorage.setItem('@finvault_master_password_' + newUid, password);
+      // Store master password in the OS secure keychain
+      await SecureStore.setItemAsync(secureKey(newUid), password);
       await AsyncStorage.setItem('@finvault_active_user_id', newUid);
 
-      // 5. Update state
       setUserId(newUid);
       setMasterPassword(password);
       setVaultLockModeState(lockMode);
-      
-      const dbUsers = all<{ id: string; name: string; email: string }>('SELECT id, full_name as name, email FROM users');
+
+      const dbUsers = all<{ id: string; name: string; email: string }>(
+        'SELECT id, full_name as name, email FROM users',
+      );
       setProfiles(dbUsers);
       setIsRegistered(true);
       setIsRegistering(false);
       setIsAuthenticated(true);
       refresh();
-      
-      // Trigger background price sync immediately on signup if seeding demo data
-      if (seedDemo) {
-        setTimeout(() => syncPricesSilentlyInternal(newUid), 1000);
-      }
 
+      if (seedDemo) setTimeout(() => syncPricesSilentlyInternal(newUid), 1000);
       return true;
     } catch (err) {
-      console.error('Sign up failed', err);
+      if (__DEV__) console.error('Sign up failed', err);
       return false;
     }
   };
 
+  // ── Login with password ──────────────────────────────────────────────────
   const loginWithPassword = async (password: string): Promise<boolean> => {
     if (!userId) return false;
-    const user = first<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', [userId]);
+    const user = first<{ password_hash: string }>(
+      'SELECT password_hash FROM users WHERE id = ?',
+      [userId],
+    );
     if (!user) return false;
 
-    const hashed = await hashPassword(password);
-    if (hashed === user.password_hash) {
-      setMasterPassword(password);
-      await AsyncStorage.setItem('@finvault_master_password_' + userId, password);
-      setIsAuthenticated(true);
-      
-      // Start background price sync silently
-      setTimeout(() => syncPricesSilentlyInternal(userId), 1000);
-      
-      return true;
+    const { ok, needsUpgrade } = await verifyPassword(password, user.password_hash);
+    if (!ok) return false;
+
+    // Silently upgrade v1 hashes to v2 on successful login
+    if (needsUpgrade) {
+      const newHash = await hashPassword(password);
+      run('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, userId]);
     }
-    return false;
+
+    await SecureStore.setItemAsync(secureKey(userId), password);
+    setMasterPassword(password);
+    setIsAuthenticated(true);
+
+    setTimeout(() => syncPricesSilentlyInternal(userId), 1000);
+    return true;
   };
 
+  // ── Login with biometrics ────────────────────────────────────────────────
   const loginWithBiometrics = async (): Promise<boolean> => {
     if (!userId) return false;
 
     const hasHardware = await LocalAuthentication.hasHardwareAsync();
     const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-    if (!hasHardware || !isEnrolled) {
-      console.log('Biometrics not available or not set up on device.');
-      return false;
-    }
+    if (!hasHardware || !isEnrolled) return false;
 
     const res = await LocalAuthentication.authenticateAsync({
       promptMessage: 'Unlock FinVault',
       fallbackLabel: 'Use Master Password',
     });
+    if (!res.success) return false;
 
-    if (res.success) {
-      const storedPassword = await AsyncStorage.getItem('@finvault_master_password_' + userId);
-      if (storedPassword) {
-        setMasterPassword(storedPassword);
-      }
-      setIsAuthenticated(true);
+    const storedPassword = await SecureStore.getItemAsync(secureKey(userId));
+    if (storedPassword) setMasterPassword(storedPassword);
+    setIsAuthenticated(true);
 
-      // Start background price sync silently
-      setTimeout(() => syncPricesSilentlyInternal(userId), 1000);
-
-      return true;
-    }
-    return false;
+    setTimeout(() => syncPricesSilentlyInternal(userId), 1000);
+    return true;
   };
 
+  // ── Logout ───────────────────────────────────────────────────────────────
   const logout = async () => {
     setMasterPassword(null);
     setIsAuthenticated(false);
@@ -259,16 +293,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logoutAndReset = async () => {
     if (!userId) return;
-
     try {
       run('DELETE FROM users WHERE id = ?', [userId]);
     } catch (e) {
-      console.error('Failed to clear database tables during logoutAndReset', e);
+      if (__DEV__) console.error('Failed to delete user during logoutAndReset', e);
     }
-    
-    await AsyncStorage.removeItem('@finvault_master_password_' + userId);
-    
-    const dbUsers = all<{ id: string; name: string; email: string }>('SELECT id, full_name as name, email FROM users');
+
+    await SecureStore.deleteItemAsync(secureKey(userId));
+
+    const dbUsers = all<{ id: string; name: string; email: string }>(
+      'SELECT id, full_name as name, email FROM users',
+    );
     setProfiles(dbUsers);
 
     if (dbUsers.length > 0) {
@@ -282,21 +317,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setThemeModeState('system');
       setVaultLockModeState('password');
     }
-    
     setIsAuthenticated(false);
     refresh();
   };
 
+  // ── Silent price sync ────────────────────────────────────────────────────
   const syncPricesSilentlyInternal = async (activeUserId: string) => {
     if (isSyncing) return;
     setIsSyncing(true);
-    console.log('Starting silent background price sync...');
+    if (__DEV__) console.log('Starting silent background price sync…');
 
     try {
-      const assets = all<{ id: string; name: string; quantity: number; slug: string; ticker: string | null; isin: string | null; details_json: string | null }>(
-        `SELECT a.id, a.name, a.quantity, a.ticker, a.isin, a.details_json, t.slug 
+      const assets = all<{
+        id: string;
+        name: string;
+        quantity: number;
+        slug: string;
+        ticker: string | null;
+        isin: string | null;
+        details_json: string | null;
+      }>(
+        `SELECT a.id, a.name, a.quantity, a.ticker, a.isin, a.details_json, t.slug
          FROM assets a JOIN asset_types t ON t.id = a.asset_type_id WHERE a.user_id = ?`,
-        [activeUserId]
+        [activeUserId],
       );
 
       const timestamp = nowISO();
@@ -323,8 +366,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 if (details._mfapi_scheme_code) cachedCode = details._mfapi_scheme_code;
               } catch { /* ignore */ }
             }
-
-            const res = await fetchMutualFundNav(asset.name || asset.isin || '', undefined, undefined, cachedCode);
+            const res = await fetchMutualFundNav(
+              asset.name || asset.isin || '',
+              undefined,
+              undefined,
+              cachedCode,
+            );
             if (res.data) {
               const updatePayload: Record<string, unknown> = {
                 current_value: Math.round(res.data.nav * asset.quantity * 100),
@@ -344,11 +391,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } else if (goldTypes.has(asset.slug)) {
             if (!goldPricePerGram && !goldFetchFailed) {
               const res = await fetchGoldPrice();
-              if (res.data) {
-                goldPricePerGram = res.data.price_per_gram_inr;
-              } else {
-                goldFetchFailed = true;
-              }
+              if (res.data) goldPricePerGram = res.data.price_per_gram_inr;
+              else goldFetchFailed = true;
             }
             if (goldPricePerGram && asset.quantity) {
               update('assets', asset.id, {
@@ -358,24 +402,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               });
             }
           }
-        } catch { /* Ignore individual errors to ensure other assets sync */ }
+        } catch { /* Individual asset sync failure doesn't block others */ }
       }
-      console.log('Silent background price sync completed.');
+      if (__DEV__) console.log('Silent background price sync completed.');
       refresh();
     } catch (err) {
-      console.error('Silent sync failed', err);
+      if (__DEV__) console.error('Silent sync failed', err);
     } finally {
       setIsSyncing(false);
     }
   };
 
   const syncPricesSilently = async () => {
-    if (userId) {
-      await syncPricesSilentlyInternal(userId);
-    }
+    if (userId) await syncPricesSilentlyInternal(userId);
   };
 
-  const value = useMemo<AppState>(
+  const value = useMemo<AppState_>(
     () => ({
       ready,
       userId,
@@ -408,21 +450,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isRegistered,
       isRegistering,
       profiles,
-      switchUser,
       themeMode,
       isDark,
       refreshKey,
       vaultLockMode,
       masterPassword,
       isSyncing,
-      logoutAndReset,
-    ]
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };
 
-export const useApp = (): AppState => {
+export const useApp = (): AppState_ => {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useApp must be used within AppProvider');
   return ctx;

@@ -17,28 +17,40 @@ export const getDb = (): SQLite.SQLiteDatabase => {
 /** UUID generator (expo-crypto). */
 export const newId = (): string => Crypto.randomUUID();
 
-const COLUMN_MIGRATIONS = [
-  'ALTER TABLE assets ADD COLUMN investment_date TEXT',
-  'ALTER TABLE assets ADD COLUMN isin TEXT',
-  'ALTER TABLE assets ADD COLUMN ticker TEXT',
-  'ALTER TABLE assets ADD COLUMN is_sip INTEGER NOT NULL DEFAULT 0',
-  'ALTER TABLE assets ADD COLUMN sip_monthly_amount INTEGER NOT NULL DEFAULT 0',
-  'ALTER TABLE assets ADD COLUMN current_nav REAL',
-  'ALTER TABLE assets ADD COLUMN price_per_unit REAL',
-  'ALTER TABLE assets ADD COLUMN maturity_date TEXT',
-  'ALTER TABLE assets ADD COLUMN guaranteed_return_pct REAL',
-  'ALTER TABLE assets ADD COLUMN details_json TEXT',
-  'ALTER TABLE sip_schedules ADD COLUMN day_of_month INTEGER',
-  'ALTER TABLE sip_schedules ADD COLUMN annual_step_up_pct REAL NOT NULL DEFAULT 0',
-  'ALTER TABLE sip_schedules ADD COLUMN start_date TEXT',
-  'ALTER TABLE sip_schedules ADD COLUMN end_date TEXT',
-  'ALTER TABLE sip_schedules ADD COLUMN linked_bank TEXT',
-  'ALTER TABLE assets ADD COLUMN last_price_updated_at TEXT',
-  "ALTER TABLE user_preferences ADD COLUMN vault_lock_mode TEXT NOT NULL DEFAULT 'password'",
-  'ALTER TABLE expenses ADD COLUMN bill_uri TEXT',
-  'ALTER TABLE asset_images ADD COLUMN local_path TEXT',
-  'ALTER TABLE loans ADD COLUMN details_json TEXT',
-  'ALTER TABLE assets ADD COLUMN maturity_amount INTEGER',
+/**
+ * Versioned schema migrations.
+ *
+ * Rules:
+ * - Never edit or remove an existing entry — only append new ones.
+ * - Versions 1-21 are the original untracked ALTER TABLE statements; they are
+ *   run with try/catch for backward compat (existing installs already applied
+ *   them silently) and then recorded as applied.
+ * - Versions 22+ are new and run exactly once, inside a transaction, with a
+ *   hard failure if they error.
+ */
+const MIGRATIONS: { version: number; sql: string; legacy?: boolean }[] = [
+  { version: 1,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN investment_date TEXT' },
+  { version: 2,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN isin TEXT' },
+  { version: 3,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN ticker TEXT' },
+  { version: 4,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN is_sip INTEGER NOT NULL DEFAULT 0' },
+  { version: 5,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN sip_monthly_amount INTEGER NOT NULL DEFAULT 0' },
+  { version: 6,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN current_nav REAL' },
+  { version: 7,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN price_per_unit REAL' },
+  { version: 8,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN maturity_date TEXT' },
+  { version: 9,  legacy: true, sql: 'ALTER TABLE assets ADD COLUMN guaranteed_return_pct REAL' },
+  { version: 10, legacy: true, sql: 'ALTER TABLE assets ADD COLUMN details_json TEXT' },
+  { version: 11, legacy: true, sql: 'ALTER TABLE sip_schedules ADD COLUMN day_of_month INTEGER' },
+  { version: 12, legacy: true, sql: 'ALTER TABLE sip_schedules ADD COLUMN annual_step_up_pct REAL NOT NULL DEFAULT 0' },
+  { version: 13, legacy: true, sql: 'ALTER TABLE sip_schedules ADD COLUMN start_date TEXT' },
+  { version: 14, legacy: true, sql: 'ALTER TABLE sip_schedules ADD COLUMN end_date TEXT' },
+  { version: 15, legacy: true, sql: 'ALTER TABLE sip_schedules ADD COLUMN linked_bank TEXT' },
+  { version: 16, legacy: true, sql: 'ALTER TABLE assets ADD COLUMN last_price_updated_at TEXT' },
+  { version: 17, legacy: true, sql: "ALTER TABLE user_preferences ADD COLUMN vault_lock_mode TEXT NOT NULL DEFAULT 'password'" },
+  { version: 18, legacy: true, sql: 'ALTER TABLE expenses ADD COLUMN bill_uri TEXT' },
+  { version: 19, legacy: true, sql: 'ALTER TABLE asset_images ADD COLUMN local_path TEXT' },
+  { version: 20, legacy: true, sql: 'ALTER TABLE loans ADD COLUMN details_json TEXT' },
+  { version: 21, legacy: true, sql: 'ALTER TABLE assets ADD COLUMN maturity_amount INTEGER' },
+  // ── New tracked migrations go here (version 22+) ──────────────────────────
 ];
 
 // Idempotent data fixes that run on every startup to correct existing databases.
@@ -58,33 +70,90 @@ const DATA_FIXES = [
   `INSERT OR IGNORE INTO asset_types (id, name, slug, sort_order) VALUES ('type_savings', 'Bank Account', 'savings', 9)`,
 ];
 
-/** Initialise schema + seed once. Returns the single user's id or null. */
+const nowIso = () => new Date().toISOString();
+
+/** Initialise schema + run pending migrations + apply data fixes. */
 export const initDb = (): string | null => {
   const db = getDb();
+
+  // 1. Apply base schema (all CREATE TABLE IF NOT EXISTS — safe to re-run).
   db.execSync(SCHEMA);
-  for (const sql of COLUMN_MIGRATIONS) {
-    try { db.runSync(sql); } catch { /* column already exists */ }
+
+  // 2. Ensure the migration tracking table exists.
+  db.runSync(
+    `CREATE TABLE IF NOT EXISTS schema_migrations (
+       version    INTEGER PRIMARY KEY,
+       applied_at TEXT NOT NULL
+     )`,
+  );
+
+  // 3. Find the highest version already recorded.
+  const row = db.getFirstSync<{ max_v: number | null }>(
+    'SELECT MAX(version) AS max_v FROM schema_migrations',
+  );
+  const appliedMax = row?.max_v ?? 0;
+
+  // 4. Run pending migrations.
+  for (const m of MIGRATIONS) {
+    if (m.version <= appliedMax) continue; // already applied
+
+    if (m.legacy) {
+      // Legacy migrations: best-effort (column may already exist from the old
+      // untracked startup loop). Record as applied regardless of outcome.
+      try { db.runSync(m.sql); } catch { /* column already exists — expected */ }
+    } else {
+      // New migrations: run inside a transaction; hard-fail on error.
+      db.withTransactionSync(() => {
+        db.runSync(m.sql);
+      });
+    }
+
+    db.runSync(
+      'INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)',
+      [m.version, nowIso()],
+    );
   }
+
+  // 5. Idempotent data fixes (always run — safe by design).
   for (const sql of DATA_FIXES) {
     try { db.runSync(sql); } catch { /* safe to ignore */ }
   }
+
   const existing = db.getFirstSync<{ id: string }>('SELECT id FROM users LIMIT 1');
-  if (existing) return existing.id;
-  return null;
+  return existing?.id ?? null;
 };
 
 // --- Thin query helpers -----------------------------------------------------
 
-export const all = <T = any>(sql: string, params: SQLite.SQLiteBindParams = []): T[] =>
-  getDb().getAllSync<T>(sql, params);
+export const all = <T = any>(sql: string, params: SQLite.SQLiteBindParams = []): T[] => {
+  try {
+    return getDb().getAllSync<T>(sql, params);
+  } catch (err) {
+    if (__DEV__) console.error('[DB] all() failed:', sql, err);
+    return [];
+  }
+};
 
 export const first = <T = any>(
   sql: string,
   params: SQLite.SQLiteBindParams = [],
-): T | null => getDb().getFirstSync<T>(sql, params);
+): T | null => {
+  try {
+    return getDb().getFirstSync<T>(sql, params);
+  } catch (err) {
+    if (__DEV__) console.error('[DB] first() failed:', sql, err);
+    return null;
+  }
+};
 
-export const run = (sql: string, params: SQLite.SQLiteBindParams = []) =>
-  getDb().runSync(sql, params);
+export const run = (sql: string, params: SQLite.SQLiteBindParams = []): void => {
+  try {
+    getDb().runSync(sql, params);
+  } catch (err) {
+    if (__DEV__) console.error('[DB] run() failed:', sql, err);
+    throw err; // re-throw so write operations can handle failures
+  }
+};
 
 /** Run a function inside a transaction (sync). */
 export const tx = (fn: (db: SQLite.SQLiteDatabase) => void): void => {

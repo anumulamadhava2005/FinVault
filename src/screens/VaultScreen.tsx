@@ -12,7 +12,13 @@ import type { VaultCredential } from '../models/types';
 import { Screen, SectionCard, Kpi, Row, ProgressBar, EmptyState } from '../components/ui';
 import { palette, statusColor } from '../theme';
 import { nowISO } from '../utils/date';
-import { encryptText, decryptText, hashPassword } from '../utils/crypto';
+import {
+  encryptWithKey,
+  decryptWithKey,
+  deriveEncryptionKey,
+  genSecurePassword,
+  verifyPassword,
+} from '../utils/crypto';
 
 /** Lightweight password-strength heuristic (0..100). */
 const strengthOf = (pw: string): number => {
@@ -26,22 +32,26 @@ const strengthOf = (pw: string): number => {
   return Math.min(s, 100);
 };
 
-const genPassword = (): string => {
-  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*';
-  let out = '';
-  for (let i = 0; i < 16; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-};
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_SECONDS = 30;
 
 const VaultScreen: React.FC = () => {
   const { userId, refresh, vaultLockMode, masterPassword } = useApp();
   const theme = useTheme();
-  
+
   // Vault lock state
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [fallbackPassword, setFallbackPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+
+  // AES key derived once on unlock
+  const [derivedKey, setDerivedKey] = useState<Uint8Array | null>(null);
+
+  // Brute-force lockout
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [lockCountdown, setLockCountdown] = useState(0);
 
   const creds = useData(() => {
     if (!isUnlocked) return [];
@@ -65,6 +75,29 @@ const VaultScreen: React.FC = () => {
       handleBiometricUnlock();
     }
   }, [vaultLockMode]);
+
+  // Derive AES key once when vault unlocks
+  useEffect(() => {
+    if (isUnlocked && masterPassword && userId) {
+      deriveEncryptionKey(masterPassword, userId).then(setDerivedKey);
+    }
+  }, [isUnlocked, masterPassword, userId]);
+
+  // Countdown timer during lockout
+  useEffect(() => {
+    if (lockedUntil === null) return;
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((lockedUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockedUntil(null);
+        setLockCountdown(0);
+        setFailedAttempts(0);
+      } else {
+        setLockCountdown(remaining);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockedUntil]);
 
   const handleBiometricUnlock = async () => {
     setAuthLoading(true);
@@ -98,6 +131,8 @@ const VaultScreen: React.FC = () => {
 
   const handlePasswordUnlock = async () => {
     if (!fallbackPassword) return;
+    if (lockedUntil !== null && Date.now() < lockedUntil) return;
+
     setAuthLoading(true);
     setAuthError(null);
 
@@ -108,22 +143,33 @@ const VaultScreen: React.FC = () => {
       return;
     }
 
-    const hashed = await hashPassword(fallbackPassword);
-    if (hashed === user.password_hash) {
+    const { ok } = await verifyPassword(fallbackPassword, user.password_hash);
+    if (ok) {
+      setFailedAttempts(0);
+      setLockedUntil(null);
       setIsUnlocked(true);
       refresh();
     } else {
-      setAuthError('Incorrect master password.');
+      const next = failedAttempts + 1;
+      setFailedAttempts(next);
+      if (next >= MAX_ATTEMPTS) {
+        const until = Date.now() + LOCKOUT_SECONDS * 1000;
+        setLockedUntil(until);
+        setLockCountdown(LOCKOUT_SECONDS);
+        setAuthError(`Too many attempts. Try again in ${LOCKOUT_SECONDS}s.`);
+      } else {
+        setAuthError(`Incorrect master password. ${MAX_ATTEMPTS - next} attempt${MAX_ATTEMPTS - next === 1 ? '' : 's'} remaining.`);
+      }
     }
     setAuthLoading(false);
   };
 
   const save = () => {
     if (!form.service.trim() || !form.password) return;
-    
-    // Encrypt password with masterPassword
-    const encryptedPw = encryptText(form.password, masterPassword || '');
-    
+    if (!derivedKey) return; // key not ready yet
+
+    const encryptedPw = encryptWithKey(form.password, derivedKey);
+
     insert('vault_credentials', {
       id: newId(),
       user_id: userId!,
@@ -205,9 +251,17 @@ const VaultScreen: React.FC = () => {
 
         {authLoading && vaultLockMode === 'password' ? (
           <ActivityIndicator color={theme.colors.primary} style={{ marginVertical: 12 }} />
+        ) : lockedUntil !== null ? (
+          <Button
+            mode="outlined"
+            disabled
+            style={{ borderRadius: theme.roundness }}
+          >
+            Locked — try again in {lockCountdown}s
+          </Button>
         ) : (
-          <Button 
-            mode={vaultLockMode === 'password' ? 'contained' : 'outlined'} 
+          <Button
+            mode={vaultLockMode === 'password' ? 'contained' : 'outlined'}
             onPress={handlePasswordUnlock}
             style={{ borderRadius: theme.roundness }}
           >
@@ -235,13 +289,13 @@ const VaultScreen: React.FC = () => {
           creds.map((c) => {
             const tone = c.password_strength >= 70 ? 'good' : c.password_strength >= 40 ? 'warn' : 'bad';
             
-            // Decrypt password on demand
+            // Decrypt password on demand using derived AES key
             let decPassword = '[Decryption Error]';
             try {
-              decPassword = decryptText(c.password_enc, masterPassword || '');
-            } catch {
-              // fallback
-            }
+              if (derivedKey) {
+                decPassword = decryptWithKey(c.password_enc, derivedKey);
+              }
+            } catch { /* fallback */ }
 
             return (
               <SectionCard key={c.id} style={{ marginBottom: 12 }}>
@@ -319,7 +373,7 @@ const VaultScreen: React.FC = () => {
                 style={{ flex: 1 }}
               />
               <IconButton icon={showFormPw ? 'eye-off' : 'eye'} onPress={() => setShowFormPw((s) => !s)} accessibilityLabel={showFormPw ? 'Hide password' : 'Show password'} />
-              <IconButton icon="dice-5" onPress={() => set('password', genPassword())} accessibilityLabel="Generate a strong password" />
+              <IconButton icon="dice-5" onPress={() => set('password', genSecurePassword())} accessibilityLabel="Generate a strong password" />
             </View>
             {form.password ? <ProgressBar pct={strengthOf(form.password)} color={statusColor(strengthOf(form.password) >= 70 ? 'good' : strengthOf(form.password) >= 40 ? 'warn' : 'bad')} height={6} /> : null}
             <TextInput label="URL (optional)" value={form.url} onChangeText={(v) => set('url', v)} mode="outlined" dense autoCapitalize="none" style={{ marginTop: 8 }} />

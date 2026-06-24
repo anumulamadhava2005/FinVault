@@ -17,12 +17,13 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { encryptPDF } from '@pdfsmaller/pdf-encrypt-lite';
+import { deriveEncryptionKey, decryptWithKey } from '../utils/crypto';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 import { DistributionPie, TrendLine } from '../components/charts';
 import { Kpi, ProgressBar, Row, Screen, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
-import { all } from '../db';
+import { all, first } from '../db';
 import { useData } from '../hooks/useData';
 import type { Asset, AssetImage, FinancialGoal, InsurancePolicy, Loan, SIPSchedule, VaultCredential } from '../models/types';
 import { LOAN_TYPE_LABELS, POLICY_TYPE_LABELS, titleCase } from '../services/constants';
@@ -277,6 +278,8 @@ const makeTrendLineSvg = (expSeries: { labels: string[]; income: number[]; expen
 /** Compiles HTML file containing report tables and charts. */
 const buildHtmlReport = async (
   userId: string,
+  userName: string,
+  masterPassword: string | null,
   nw: any,
   pf: any,
   expMonth: any,
@@ -754,6 +757,11 @@ const buildHtmlReport = async (
   let vaultHtml = '';
   if (includeVault) {
     const creds = all<VaultCredential>('SELECT * FROM vault_credentials WHERE user_id = ? ORDER BY service', [userId!]);
+    // Derive AES key to decrypt each credential
+    let vaultKey: Uint8Array | null = null;
+    if (masterPassword) {
+      try { vaultKey = await deriveEncryptionKey(masterPassword, userId); } catch { /* fallback to no decryption */ }
+    }
     vaultHtml = `
       <div class="section" style="page-break-before: always;">
         <div class="section-title" style="color: #991b1b; border-bottom: 2px solid #fee2e2;">Decrypted Vault Credentials</div>
@@ -775,11 +783,15 @@ const buildHtmlReport = async (
             ${creds.map(c => {
               const tone = c.password_strength >= 70 ? 'good' : c.password_strength >= 40 ? 'warn' : 'bad';
               const label = c.password_strength >= 70 ? 'Strong' : c.password_strength >= 40 ? 'Medium' : 'Weak';
+              let plaintext = '[Locked — vault password required]';
+              if (vaultKey) {
+                try { plaintext = decryptWithKey(c.password_enc, vaultKey); } catch { plaintext = '[Decryption Error]'; }
+              }
               return `
                 <tr>
                   <td><strong>${c.service}</strong></td>
                   <td>${c.username || 'N/A'}</td>
-                  <td style="font-family: monospace; font-size: 12px; color: #111827; background-color: #f9fafb; padding: 4px 8px; border-radius: 4px; border: 1px solid #e5e7eb; word-break: break-all;">${c.password_enc}</td>
+                  <td style="font-family: monospace; font-size: 12px; color: #111827; background-color: #f9fafb; padding: 4px 8px; border-radius: 4px; border: 1px solid #e5e7eb; word-break: break-all;">${plaintext}</td>
                   <td><span class="badge badge-${tone}">${label} (${c.password_strength}%)</span></td>
                   <td><a href="${c.url || '#'}" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 11px; word-break: break-all;">${c.url || 'N/A'}</a></td>
                 </tr>
@@ -955,7 +967,7 @@ const buildHtmlReport = async (
       <div class="header">
         <div>
           <h1 class="header-title">FINVAULT FINANCIAL REPORT</h1>
-          <div class="header-meta">Generated on ${todayISO()} for user Aarav Sharma</div>
+          <div class="header-meta">Generated on ${todayISO()} for ${userName}</div>
         </div>
         <div style="font-size: 11px; color: #9ca3af; font-family: monospace;">CONFIDENTIAL &bull; SECURE PDF</div>
       </div>
@@ -1004,8 +1016,11 @@ const buildHtmlReport = async (
 };
 
 const ReportsScreen: React.FC = () => {
-  const { userId } = useApp();
+  const { userId, masterPassword } = useApp();
   const theme = useTheme();
+  const userName = useData(() =>
+    first<{ full_name: string }>('SELECT full_name FROM users WHERE id = ?', [userId!])?.full_name ?? 'User',
+  );
   
   // Data Queries
   const nw = useData(() => netWorth(userId!));
@@ -1142,7 +1157,7 @@ const ReportsScreen: React.FC = () => {
     setIsGenerating(true);
     try {
       // 1. Compile the detailed HTML layout with vector SVG graphics
-      const htmlContent = await buildHtmlReport(userId!, nw, pf, expMonth, expSeries, selected, includeVault, addWatermark, watermarkText);
+      const htmlContent = await buildHtmlReport(userId!, userName, masterPassword, nw, pf, expMonth, expSeries, selected, includeVault, addWatermark, watermarkText);
 
       // 2. Generate PDF file using expo-print
       const { uri } = await Print.printToFileAsync({ html: htmlContent });

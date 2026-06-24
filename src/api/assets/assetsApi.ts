@@ -6,7 +6,10 @@
  * • Gold    → Yahoo Finance `GC=F` + `USDINR=X` → INR/gram
  */
 
-import type { ApiResponse } from '../client';
+export interface ApiResponse<T> {
+  data: T | null;
+  error: string | null;
+}
 import { fetchYahooChart } from '../../utils/yahoo';
 
 // ─── Types ──────────────────────────────────────────────────────────────────

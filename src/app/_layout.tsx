@@ -14,6 +14,7 @@ import { darkTheme, lightTheme, palette } from '@/theme';
 import { first } from '@/db';
 import BouncePressable from '@/components/BouncePressable';
 import ThemeToggle from '@/components/ThemeToggle';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const paperIconSettings = {
   icon: (props: any) => <MaterialCommunityIcons {...props} />,
@@ -262,6 +263,7 @@ const CustomDrawer = (props: any) => {
           {renderSectionHeader('ACCOUNT')}
           {profiles.length > 1 && renderActionItem(logout, 'Switch Profile', 'account-switch')}
           {renderMenuItem('settings', 'Settings', 'cog')}
+          {renderMenuItem('about', 'About FinVault', 'information-outline')}
           
           <View style={{ marginVertical: 6 }}>
             {/* Elegant Appearance Control */}
@@ -1106,6 +1108,8 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="notifications" options={{ title: 'Notifications', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="retirement" options={{ title: 'Retirement', drawerIcon: drawerIcon('island') }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings', drawerIcon: drawerIcon('cog') }} />
+        <Drawer.Screen name="about" options={{ title: 'About FinVault', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="backup" options={{ title: 'Backup & Restore', drawerItemStyle: { display: 'none' } }} />
       </Drawer>
     </PaperProvider>
   );
@@ -1113,13 +1117,15 @@ const Navigator: React.FC = () => {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AppProvider>
-          <Navigator />
-        </AppProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <AppProvider>
+            <Navigator />
+          </AppProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
 

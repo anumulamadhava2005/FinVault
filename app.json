@@ -8,18 +8,18 @@
     "scheme": "finvault",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.mao1729.FinVault"
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "com.finvault.app"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#181818",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.mao1729.FinVault",
+      "package": "com.finvault.app",
       "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
@@ -31,7 +31,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#181818",
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
@@ -50,9 +50,6 @@
       ],
       "expo-sharing"
     ],
-    "extra": {
-      "apiBaseUrl": "https://api.finvault.local"
-    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

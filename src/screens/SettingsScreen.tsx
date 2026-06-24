@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import { Button, Dialog, Divider, List, Menu, Portal, SegmentedButtons, Text, TextInput, useTheme } from 'react-native-paper';
+import { useRouter } from 'expo-router';
 
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
@@ -13,6 +14,7 @@ const RISK = ['conservative', 'moderate', 'aggressive'];
 
 const SettingsScreen: React.FC = () => {
   const { userId, refresh, themeMode, setThemeMode } = useApp();
+  const router = useRouter();
   const theme = useTheme();
   const user = useData(() => first<User>('SELECT * FROM users WHERE id = ?', [userId!]));
   const prefs = useData(() => first<UserPreferences>('SELECT * FROM user_preferences WHERE user_id = ?', [userId!]));
@@ -90,9 +92,31 @@ const SettingsScreen: React.FC = () => {
           />
         </SectionCard>
 
+        <SectionCard title="Data & Backup" style={{ marginBottom: 12 }}>
+          <List.Item
+            title="Backup & Restore"
+            description="Export an encrypted backup or restore from a file"
+            left={(p) => <List.Icon {...p} icon="shield-lock-outline" />}
+            right={(p) => <List.Icon {...p} icon="chevron-right" />}
+            onPress={() => router.push('/backup' as any)}
+          />
+        </SectionCard>
+
         <SectionCard title="About" style={{ marginBottom: 12 }}>
-          <List.Item title="FinVault Mobile" description="v1.0.0 · standalone (local SQLite)" left={(p) => <List.Icon {...p} icon="information" />} />
-          <List.Item title="Data" description="All data is stored on this device only." left={(p) => <List.Icon {...p} icon="database" />} />
+          <List.Item
+            title="FinVault"
+            description="v1.0.0 · Privacy-first offline wealth manager"
+            left={(p) => <List.Icon {...p} icon="wallet-outline" />}
+            right={(p) => <List.Icon {...p} icon="chevron-right" />}
+            onPress={() => router.push('/about' as any)}
+          />
+          <List.Item
+            title="Architecture & Product Info"
+            description="Value proposition, tech stack, and team"
+            left={(p) => <List.Icon {...p} icon="information-outline" />}
+            right={(p) => <List.Icon {...p} icon="chevron-right" />}
+            onPress={() => router.push('/about' as any)}
+          />
         </SectionCard>
       </Screen>
 
