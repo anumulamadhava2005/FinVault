@@ -121,36 +121,39 @@ const BillScanModal: React.FC<Props> = ({ visible, onClose, onSaved }) => {
     const persistentUri = await copyToPersistentStorage(captured.uri, captured.fileName || 'bill.jpg');
     setBillUri(persistentUri);
 
-    // OCR pipeline: try PaddleOCR 3.0 (server-side) first, then fall back to
-    // on-device ML Kit / Vision. Never throws — empty text → manual entry.
+    // OCR pipeline: on-device ML Kit / Vision first (works in production with
+    // no network dependency). In development, PaddleOCR is tried as an optional
+    // enhancement if the on-device result is sparse. Never throws.
     let text = '';
     let usedEngine = 'none';
 
-    const paddle = await ocrWithPaddle(captured.uri);
-    if (paddle) {
-      text = paddle;
-      usedEngine = 'PaddleOCR';
-    } else {
-      // On-device ML Kit (Android) / Vision (iOS). InputImage.fromFilePath wants
-      // a content:// or file:// URI, so pass the original URI (with scheme).
-      try {
-        const result = await recognizeText(captured.uri, {});
-        if (result.success) {
-          const joined =
-            result.fullText ??
-            result.pages?.flatMap((p) => p.elements.map((e) => e.text)).join('\n') ??
-            '';
-          if (joined.trim()) {
-            text = joined;
-            usedEngine = 'on-device';
-          }
+    // 1. On-device OCR — always available, no server required
+    try {
+      const onDeviceResult = await recognizeText(captured.uri, {});
+      if (onDeviceResult.success) {
+        const joined =
+          onDeviceResult.fullText ??
+          onDeviceResult.pages?.flatMap((p) => p.elements.map((e) => e.text)).join('\n') ??
+          '';
+        if (joined.trim()) {
+          text = joined;
+          usedEngine = 'on-device';
         }
-      } catch (err) {
-        console.warn('[BillScan] on-device OCR failed:', err instanceof Error ? err.message : err);
+      }
+    } catch (err) {
+      if (__DEV__) console.warn('[BillScan] on-device OCR failed:', err instanceof Error ? err.message : err);
+    }
+
+    // 2. In dev only: try PaddleOCR server as enhancement when on-device text is sparse
+    if (__DEV__ && text.length < 30) {
+      const paddle = await ocrWithPaddle(captured.uri);
+      if (paddle && paddle.length > text.length) {
+        text = paddle;
+        usedEngine = 'PaddleOCR (dev)';
       }
     }
 
-    console.log(`[BillScan] engine=${usedEngine}, chars=${text.length}`);
+    if (__DEV__) console.log(`[BillScan] engine=${usedEngine}, chars=${text.length}`);
 
     const parsed = parseBill(text);
     setRawText(parsed.rawText);

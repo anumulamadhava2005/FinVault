@@ -127,43 +127,68 @@ async function fetchOne(asset: AssetRow, fx: number): Promise<AssetMarket> {
         const dj = asset.details_json ? JSON.parse(asset.details_json) : null;
         if (dj?._mfapi_scheme_code) code = dj._mfapi_scheme_code;
       } catch { /* ignore */ }
-      if (!code) {
-        const sres = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(asset.name)}`);
-        if (sres.ok) {
-          const list: { schemeCode: number }[] = await sres.json();
-          code = list?.[0]?.schemeCode;
-        }
-      }
-      if (code && qty > 0) {
-        const nres = await fetch(`https://api.mfapi.in/mf/${code}`);
-        if (nres.ok) {
-          const nj: any = await nres.json();
-          const data: { date: string; nav: string }[] = nj?.data ?? []; // newest-first
-          if (data.length) {
-            const latest = parseFloat(data[0].nav);
-            const prev = parseFloat(data[1]?.nav ?? data[0].nav);
-            // Month-end NAVs (first per month encountered = latest in that month).
-            const byMonth = new Map<string, { label: string; value: number }>();
-            for (const row of data) {
-              const [dd, mm, yyyy] = row.date.split('-');
-              const key = `${yyyy}-${mm}`;
-              if (!byMonth.has(key)) byMonth.set(key, { label: MONTHS[Number(mm) - 1], value: parseFloat(row.nav) });
-            }
-            const ordered = [...byMonth.values()].reverse(); // oldest → newest
-            return {
-              asset_id: asset.id,
-              day_change_pct: prev ? Number((((latest - prev) / prev) * 100).toFixed(2)) : 0,
-              day_change_value: Math.round(qty * (latest - prev) * 100),
-              monthly: buildMonthly(ordered, qty, latest),
-              source: 'mfapi.in',
-              modeled: false,
-              updated_at: nowISO(),
-            };
+      // Hard 10-second timeout on mfapi.in — community service, can be slow
+      const mfCtrl = new AbortController();
+      const mfTimer = setTimeout(() => mfCtrl.abort(), 10_000);
+      try {
+        if (!code) {
+          const sres = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(asset.name)}`, { signal: mfCtrl.signal });
+          if (sres.ok) {
+            const list: { schemeCode: number }[] = await sres.json();
+            code = list?.[0]?.schemeCode;
           }
         }
+        if (code && qty > 0) {
+          const nres = await fetch(`https://api.mfapi.in/mf/${code}`, { signal: mfCtrl.signal });
+          if (nres.ok) {
+            const nj: any = await nres.json();
+            const data: { date: string; nav: string }[] = nj?.data ?? [];
+            if (data.length) {
+              const latest = parseFloat(data[0].nav);
+              const prev = parseFloat(data[1]?.nav ?? data[0].nav);
+              const byMonth = new Map<string, { label: string; value: number }>();
+              for (const row of data) {
+                const [, mm, yyyy] = row.date.split('-');
+                const key = `${yyyy}-${mm}`;
+                if (!byMonth.has(key)) byMonth.set(key, { label: MONTHS[Number(mm) - 1], value: parseFloat(row.nav) });
+              }
+              const ordered = [...byMonth.values()].reverse();
+              clearTimeout(mfTimer);
+              return {
+                asset_id: asset.id,
+                day_change_pct: prev ? Number((((latest - prev) / prev) * 100).toFixed(2)) : 0,
+                day_change_value: Math.round(qty * (latest - prev) * 100),
+                monthly: buildMonthly(ordered, qty, latest),
+                source: 'AMFI via mfapi.in',
+                modeled: false,
+                updated_at: nowISO(),
+              };
+            }
+          }
+        }
+      } finally {
+        clearTimeout(mfTimer);
       }
     } else if (asset.slug === 'digital_gold' || asset.slug === 'physical_gold') {
-      const d = await yahooDaily('GC=F'); // USD/oz
+      // Primary: GOLDBEES.NS (Nippon India Gold BeES) — 0.01g/unit → ×100 = ₹/gram
+      // Tracks actual Indian gold price including import duty and GST
+      const goldbees = await yahooDaily('GOLDBEES.NS');
+      if (goldbees && qty > 0) {
+        const priceInr = goldbees.price * 100;
+        const prevInr = goldbees.prevClose * 100;
+        const closesInr = goldbees.closes.map((c) => ({ label: c.label, value: c.value * 100 }));
+        return {
+          asset_id: asset.id,
+          day_change_pct: prevInr ? Number((((priceInr - prevInr) / prevInr) * 100).toFixed(2)) : 0,
+          day_change_value: Math.round(qty * (priceInr - prevInr) * 100),
+          monthly: buildMonthly(closesInr, qty, priceInr),
+          source: 'Yahoo · GOLDBEES.NS',
+          modeled: false,
+          updated_at: nowISO(),
+        };
+      }
+      // Fallback: COMEX GC=F futures + USD/INR spot
+      const d = await yahooDaily('GC=F');
       if (d && qty > 0) {
         const toInrGram = (usdOz: number) => (usdOz / TROY_OZ_TO_GRAMS) * fx;
         const priceInr = toInrGram(d.price);
@@ -174,7 +199,7 @@ async function fetchOne(asset: AssetRow, fx: number): Promise<AssetMarket> {
           day_change_pct: prevInr ? Number((((priceInr - prevInr) / prevInr) * 100).toFixed(2)) : 0,
           day_change_value: Math.round(qty * (priceInr - prevInr) * 100),
           monthly: buildMonthly(closesInr, qty, priceInr),
-          source: 'Yahoo · Gold',
+          source: 'Yahoo · GC=F (COMEX)',
           modeled: false,
           updated_at: nowISO(),
         };
@@ -242,10 +267,15 @@ export const todayMovers = (userId: string) => {
   let totalValue = 0;
   let todayChange = 0;
   let haveData = false;
+  // Oldest live quote time across all market assets (= most stale price)
+  let lastPriceAt: string | null = null;
   const rows: Mover[] = assets.map((a) => {
     totalValue += a.current_value;
     const m = getAssetMarket(a.id);
-    if (m && !m.modeled) haveData = true;
+    if (m && !m.modeled) {
+      haveData = true;
+      if (!lastPriceAt || m.updated_at < lastPriceAt) lastPriceAt = m.updated_at;
+    }
     const change = m ? m.day_change_value : 0;
     todayChange += change;
     return { id: a.id, name: a.name, type_name: a.type_name, slug: a.slug, current: a.current_value, change, pct: m ? m.day_change_pct : 0 };
@@ -258,6 +288,7 @@ export const todayMovers = (userId: string) => {
     gainers: rows.filter((r) => r.change > 0).sort((a, b) => b.change - a.change).slice(0, 5),
     losers: rows.filter((r) => r.change < 0).sort((a, b) => a.change - b.change).slice(0, 5),
     haveData,
+    lastPriceAt,
   };
 };
 

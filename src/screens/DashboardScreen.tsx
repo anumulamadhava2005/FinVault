@@ -352,6 +352,31 @@ const DashboardScreen: React.FC = () => {
                   Fetching live prices… today's movement appears once quotes load.
                 </Text>
               )}
+              {movers.haveData && movers.lastPriceAt && (() => {
+                const ms = Date.now() - new Date(movers.lastPriceAt).getTime();
+                const hours = Math.floor(ms / 3_600_000);
+                const minutes = Math.floor(ms / 60_000);
+                const stale = hours >= 24;
+                const label = stale
+                  ? `Prices ${hours}h old — pull to refresh`
+                  : hours >= 1
+                    ? `Updated ${hours}h ago`
+                    : minutes >= 1
+                      ? `Updated ${minutes}m ago`
+                      : 'Live prices';
+                return (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                    <MaterialCommunityIcons
+                      name={stale ? 'clock-alert-outline' : 'check-circle-outline'}
+                      size={12}
+                      color={stale ? palette.warn : theme.colors.onSurfaceVariant}
+                    />
+                    <Text variant="labelSmall" style={{ color: stale ? palette.warn : theme.colors.onSurfaceVariant }}>
+                      {label}
+                    </Text>
+                  </View>
+                );
+              })()}
             </SectionCard>
           );
         })()}

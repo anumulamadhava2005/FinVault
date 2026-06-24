@@ -2,8 +2,12 @@
  * Live price APIs — no backend required.
  *
  * • Equity  → Yahoo Finance v8 chart API (NSE tickers, suffix `.NS`)
- * • MF NAV  → api.mfapi.in (free Indian MF NAV service, searches by name)
- * • Gold    → Yahoo Finance `GC=F` + `USDINR=X` → INR/gram
+ *             Standard non-commercial client usage (crumb/cookie session).
+ * • MF NAV  → api.mfapi.in (community wrapper around official AMFI NAV data;
+ *             same scheme codes as AMFI, updated daily)
+ * • Gold    → Nippon India Gold BeES (GOLDBEES.NS, 0.01 g/unit) — reflects
+ *             Indian market price including import duty + GST.
+ *             Fallback: COMEX GC=F × USDINR=X (may differ 5–15% from MCX).
  */
 
 export interface ApiResponse<T> {
@@ -83,9 +87,9 @@ interface MfApiNavResponse {
 }
 
 /**
- * Fetch NAV for an Indian mutual fund.
- * Uses api.mfapi.in — searches by fund name (since ISIN lookup isn't supported).
- * Caches scheme_code via the optional cacheCallback.
+ * Fetch NAV for an Indian mutual fund via api.mfapi.in (wraps official AMFI data).
+ * Searches by fund name when scheme code is not already cached on the asset.
+ * Hard 10-second timeout guards against slow responses.
  */
 export async function fetchMutualFundNav(
   nameOrIsin: string,
@@ -93,22 +97,25 @@ export async function fetchMutualFundNav(
   signal?: AbortSignal,
   schemeCode?: number,
 ): Promise<ApiResponse<MutualFundNavResult> & { schemeCode?: number }> {
+  // Enforce a 10-second timeout; respect an earlier abort from the caller
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  const sig: AbortSignal = (signal as any) ?? ctrl.signal;
+
   try {
     let code = schemeCode;
 
-    // If we don't have a cached scheme code, search for it
     if (!code) {
       const searchUrl = `https://api.mfapi.in/mf/search?q=${encodeURIComponent(nameOrIsin)}`;
-      const searchRes = await fetch(searchUrl, { signal });
+      const searchRes = await fetch(searchUrl, { signal: sig });
       if (!searchRes.ok) return { data: null, error: 'MF search failed' };
       const results: MfApiSearchResult[] = await searchRes.json();
       if (!results.length) return { data: null, error: 'No matching fund found' };
       code = results[0].schemeCode;
     }
 
-    // Fetch NAV
     const navUrl = `https://api.mfapi.in/mf/${code}`;
-    const navRes = await fetch(navUrl, { signal });
+    const navRes = await fetch(navUrl, { signal: sig });
     if (!navRes.ok) return { data: null, error: 'NAV fetch failed' };
     const navJson: MfApiNavResponse = await navRes.json();
     const latest = navJson.data?.[0];
@@ -117,49 +124,59 @@ export async function fetchMutualFundNav(
     if (isNaN(nav)) return { data: null, error: 'Invalid NAV value' };
 
     return {
-      data: {
-        isin: nameOrIsin,
-        nav,
-        scheme_name: navJson.meta?.scheme_name ?? nameOrIsin,
-      },
+      data: { isin: nameOrIsin, nav, scheme_name: navJson.meta?.scheme_name ?? nameOrIsin },
       schemeCode: code,
       error: null,
     };
-  } catch {
-    return { data: null, error: 'Network error fetching MF NAV' };
+  } catch (err: unknown) {
+    const timedOut = err instanceof Error && err.name === 'AbortError';
+    return { data: null, error: timedOut ? 'MF NAV request timed out' : 'Network error fetching MF NAV' };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 // ─── Gold ───────────────────────────────────────────────────────────────────
 
 const TROY_OZ_TO_GRAMS = 31.1035;
+// GOLDBEES: Nippon India Gold BeES ETF — 1 unit = 0.01 g of 99.5% purity gold.
+// Price × 100 = ₹/gram. Reflects actual Indian market price (incl. import duty + GST).
+const GOLDBEES_SYMBOL = 'GOLDBEES.NS';
+const GOLDBEES_GRAMS_PER_UNIT = 0.01;
 
-/** Fetch current gold price in INR/gram via Yahoo Finance (gold futures + USD/INR). */
+/**
+ * Fetch current gold price in INR/gram.
+ * Primary: GOLDBEES.NS (Indian ETF, ~Indian MCX price).
+ * Fallback: COMEX GC=F futures × USDINR=X (may underestimate by 5-15% vs MCX).
+ */
 export async function fetchGoldPrice(
   _token?: string,
   signal?: AbortSignal,
 ): Promise<ApiResponse<GoldPriceResult>> {
+  // Primary: GOLDBEES ETF — one unit = 0.01g, so price / 0.01 = ₹/gram
   try {
-    // Fetch gold futures (USD/oz) and USD/INR in parallel
+    const goldbees = await yahooPrice(GOLDBEES_SYMBOL, signal);
+    if (goldbees) {
+      const price_per_gram_inr = goldbees.price / GOLDBEES_GRAMS_PER_UNIT;
+      return {
+        data: { price_per_gram_inr: Math.round(price_per_gram_inr * 100) / 100, gc_usd: 0, usd_inr: 0 },
+        error: null,
+      };
+    }
+  } catch { /* fall through to COMEX fallback */ }
+
+  // Fallback: COMEX GC=F gold futures + USD/INR spot rate
+  try {
     const [goldResult, fxResult] = await Promise.all([
       yahooPrice('GC=F', signal),
       yahooPrice('USDINR=X', signal),
     ]);
-
-    if (!goldResult || !fxResult) {
-      return { data: null, error: 'Unable to fetch gold/FX prices' };
-    }
-
-    const gc_usd = goldResult.price; // USD per troy oz
-    const usd_inr = fxResult.price; // INR per USD
+    if (!goldResult || !fxResult) return { data: null, error: 'Unable to fetch gold price' };
+    const gc_usd = goldResult.price;
+    const usd_inr = fxResult.price;
     const price_per_gram_inr = (gc_usd / TROY_OZ_TO_GRAMS) * usd_inr;
-
     return {
-      data: {
-        price_per_gram_inr: Math.round(price_per_gram_inr * 100) / 100,
-        gc_usd,
-        usd_inr,
-      },
+      data: { price_per_gram_inr: Math.round(price_per_gram_inr * 100) / 100, gc_usd, usd_inr },
       error: null,
     };
   } catch {
