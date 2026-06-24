@@ -12,7 +12,6 @@ import { useLocalSearchParams } from 'expo-router';
 import { Screen, SectionCard, Kpi, Row, EmptyState } from '../../components/ui';
 import { TrendLine } from '../../components/charts';
 import { useApp } from '../../context/AppContext';
-import { useData, useDataSafe } from '../../hooks/useData';
 import { first } from '../../db';
 import type { Asset } from '../../models/types';
 import { getAssetMarket, refreshAssetMarket, modeledMonthly } from '../../services/assetMarket';
@@ -22,22 +21,35 @@ import { palette, chartColors } from '../../theme';
 
 const AssetAnalysisScreen: React.FC = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { userId, refresh } = useApp();
+  const { userId, refreshKey, refresh } = useApp();
   const theme = useTheme();
 
-  const { data: asset } = useDataSafe<(Asset & { type_name: string }) | null>(() =>
-    first<Asset & { type_name: string }>(
-      `SELECT a.*, t.name AS type_name FROM assets a JOIN asset_types t ON t.id = a.asset_type_id WHERE a.id = ?`,
-      [id],
-    ),
-  );
+  const asset = React.useMemo(() => {
+    if (!id) return null;
+    try {
+      return first<Asset & { type_name: string }>(
+        `SELECT a.*, t.name AS type_name FROM assets a JOIN asset_types t ON t.id = a.asset_type_id WHERE a.id = ?`,
+        [id],
+      ) ?? null;
+    } catch {
+      return null;
+    }
+  }, [id, refreshKey]);
 
-  const market = useData(() => getAssetMarket(id!));
-  const bench = useData(() => benchmarkAnalysis(userId!).rows.find((r) => r.id === id) ?? null);
+  const market = React.useMemo(() => {
+    return id ? getAssetMarket(id) : null;
+  }, [id, refreshKey]);
+
+  const bench = React.useMemo(() => {
+    if (!userId || !id) return null;
+    return benchmarkAnalysis(userId).rows.find((r) => r.id === id) ?? null;
+  }, [userId, id, refreshKey]);
 
   // Refresh this asset's live data on open.
   useEffect(() => {
-    refreshAssetMarket(userId!).then(() => refresh()).catch(() => { /* offline */ });
+    if (userId) {
+      refreshAssetMarket(userId).then(() => refresh()).catch(() => { /* offline */ });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 

@@ -8,6 +8,7 @@ import type { Asset, FinancialGoal, SIPSchedule, Loan, InsurancePolicy } from '.
 import { goalsProgress, GOAL_STATUS_META } from './finance';
 import { daysBetween, nowISO, parseISO, todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
+import { getMarketSnapshot } from './marketFeeds';
 
 // ─── Query helpers ──────────────────────────────────────────────────────────
 
@@ -349,6 +350,53 @@ export const generateInsuranceNotifications = (userId: string): void => {
   }
 };
 
+// ─── Market opening and closing notifications ───────────────────────────────
+
+export const generateMarketNotifications = (userId: string): void => {
+  const snap = getMarketSnapshot();
+  if (!snap) return;
+
+  const nifty = snap.indices.find((i) => i.symbol === '^NSEI');
+  const sensex = snap.indices.find((i) => i.symbol === '^BSESN');
+  if (!nifty || !sensex) return;
+
+  const now = new Date();
+  const day = now.getDay();
+  const isWeekend = day === 0 || day === 6;
+  if (isWeekend) return; // Stock market is closed on weekends
+
+  const formatPrice = (val: number) => Math.round(val).toLocaleString('en-IN');
+
+  // 1. Market Open notification (Past 9:15 AM local time)
+  const openTime = new Date();
+  openTime.setHours(9, 15, 0, 0);
+  if (now >= openTime) {
+    // Back out the open price from current price and day change percent:
+    // price = open * (1 + changePct/100) => open = price / (1 + changePct/100)
+    const niftyOpen = nifty.price / (1 + nifty.changePct / 100);
+    const sensexOpen = sensex.price / (1 + sensex.changePct / 100);
+
+    notify(
+      userId,
+      'NSE/BSE Market Open',
+      `Nifty 50 opened today at ${formatPrice(niftyOpen)} (currently ${formatPrice(nifty.price)}). Sensex opened at ${formatPrice(sensexOpen)} (currently ${formatPrice(sensex.price)}).`,
+      'market_open',
+    );
+  }
+
+  // 2. Market Close notification (Past 3:30 PM local time)
+  const closeTime = new Date();
+  closeTime.setHours(15, 30, 0, 0);
+  if (now >= closeTime) {
+    notify(
+      userId,
+      'NSE/BSE Market Close',
+      `Nifty 50 closed at ${formatPrice(nifty.price)} (${nifty.changePct >= 0 ? '+' : ''}${nifty.changePct.toFixed(2)}%). Sensex closed at ${formatPrice(sensex.price)} (${sensex.changePct >= 0 ? '+' : ''}${sensex.changePct.toFixed(2)}%).`,
+      'market_close',
+    );
+  }
+};
+
 // ─── Aggregate generator (Dashboard notification hub) ───────────────────────
 
 /**
@@ -361,4 +409,5 @@ export const generateAllNotifications = (userId: string, year: number, month: nu
   try { generateGoalNotifications(userId); } catch { /* non-critical */ }
   try { generateLoanNotifications(userId); } catch { /* non-critical */ }
   try { generateInsuranceNotifications(userId); } catch { /* non-critical */ }
+  try { generateMarketNotifications(userId); } catch { /* non-critical */ }
 };

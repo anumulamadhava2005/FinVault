@@ -16,7 +16,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 import { useApp } from '../../context/AppContext';
-import { useDataSafe } from '../../hooks/useData';
 import { all, first, insert, newId, remove, run } from '../../db';
 import type { Asset, AssetImage, FinancialGoal } from '../../models/types';
 import { Screen, SectionCard, Kpi, Row, EmptyState } from '../../components/ui';
@@ -138,37 +137,53 @@ const ZoomableImage: React.FC<{ uri: string }> = ({ uri }) => {
 
 const AssetDetailScreen: React.FC = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { userId, refresh } = useApp();
+  const { userId, refreshKey, refresh } = useApp();
   const router = useRouter();
   const theme = useTheme();
 
-  const { data: asset, error: assetError } = useDataSafe<(Asset & { type_name: string; slug: string }) | null>(() =>
-    first<Asset & { type_name: string; slug: string }>(
-      `SELECT a.*, t.name AS type_name, t.slug FROM assets a
-       JOIN asset_types t ON t.id = a.asset_type_id WHERE a.id = ?`,
-      [id],
-    ),
-  );
+  const { asset, assetError } = React.useMemo(() => {
+    if (!id) return { asset: null, assetError: null };
+    try {
+      const res = first<Asset & { type_name: string; slug: string }>(
+        `SELECT a.*, t.name AS type_name, t.slug FROM assets a
+         JOIN asset_types t ON t.id = a.asset_type_id WHERE a.id = ?`,
+        [id],
+      ) ?? null;
+      return { asset: res, assetError: null };
+    } catch (err: any) {
+      return { asset: null, assetError: err?.message || 'Error loading asset' };
+    }
+  }, [id, refreshKey]);
 
-  const { data: allGoals } = useDataSafe<GoalWithLink[]>(() =>
-    all<GoalWithLink>(
-      `SELECT fg.*,
-         CASE WHEN gal.id IS NOT NULL THEN 1 ELSE 0 END AS is_linked,
-         gal.allocation_pct
-       FROM financial_goals fg
-       LEFT JOIN goal_asset_links gal ON gal.goal_id = fg.id AND gal.asset_id = ?
-       WHERE fg.user_id = ? AND fg.is_completed = 0
-       ORDER BY fg.name`,
-      [id, userId!],
-    ),
-  );
+  const allGoals = React.useMemo(() => {
+    if (!id || !userId) return [];
+    try {
+      return all<GoalWithLink>(
+        `SELECT fg.*,
+           CASE WHEN gal.id IS NOT NULL THEN 1 ELSE 0 END AS is_linked,
+           gal.allocation_pct
+         FROM financial_goals fg
+         LEFT JOIN goal_asset_links gal ON gal.goal_id = fg.id AND gal.asset_id = ?
+         WHERE fg.user_id = ? AND fg.is_completed = 0
+         ORDER BY fg.name`,
+        [id, userId],
+      );
+    } catch {
+      return [];
+    }
+  }, [id, userId, refreshKey]);
 
-  const { data: images } = useDataSafe<AssetImage[]>(() =>
-    all<AssetImage>(
-      'SELECT * FROM asset_images WHERE asset_id = ? ORDER BY created_at',
-      [id],
-    ),
-  );
+  const images = React.useMemo(() => {
+    if (!id) return [];
+    try {
+      return all<AssetImage>(
+        'SELECT * FROM asset_images WHERE asset_id = ? ORDER BY created_at',
+        [id],
+      );
+    } catch {
+      return [];
+    }
+  }, [id, refreshKey]);
 
   const { sip, save: saveSIP } = useSIPConfig(userId!, id ?? '');
   const [sipOpen, setSipOpen] = useState(false);

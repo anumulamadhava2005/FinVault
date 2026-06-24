@@ -4,7 +4,6 @@ import { ActivityIndicator, Button, useTheme } from 'react-native-paper';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { useApp } from '../../context/AppContext';
-import { useDataSafe } from '../../hooks/useData';
 import { first, update, remove, all } from '../../db';
 import type { Asset, AssetType } from '../../models/types';
 import { Screen, SectionCard, EmptyState } from '../../components/ui';
@@ -13,15 +12,27 @@ import AssetForm, { AssetFormValues, assetToFormValues } from '../../components/
 
 const EditAssetScreen: React.FC = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { userId, refresh } = useApp();
+  const { userId, refreshKey, refresh } = useApp();
   const router = useRouter();
 
-  const { data: asset, error: assetError } = useDataSafe(() =>
-    first<Asset>('SELECT * FROM assets WHERE id = ? AND user_id = ?', [id, userId]),
-  );
-  const { data: assetTypes, error: typesError } = useDataSafe(() =>
-    all<AssetType>('SELECT * FROM asset_types ORDER BY sort_order'),
-  );
+  const { asset, assetError } = React.useMemo(() => {
+    if (!id || !userId) return { asset: null, assetError: null };
+    try {
+      const res = first<Asset>('SELECT * FROM assets WHERE id = ? AND user_id = ?', [id, userId]) ?? null;
+      return { asset: res, assetError: null };
+    } catch (err: any) {
+      return { asset: null, assetError: err?.message || 'Error loading asset' };
+    }
+  }, [id, userId, refreshKey]);
+
+  const { assetTypes, typesError } = React.useMemo(() => {
+    try {
+      const res = all<AssetType>('SELECT * FROM asset_types ORDER BY sort_order');
+      return { assetTypes: res, typesError: null };
+    } catch (err: any) {
+      return { assetTypes: null, typesError: err?.message || 'Error loading asset types' };
+    }
+  }, [refreshKey]);
 
   if (assetError || typesError) {
     return (
