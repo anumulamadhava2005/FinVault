@@ -1,6 +1,6 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useMemo, useState, useLayoutEffect } from 'react';
-import { Dimensions, Platform, ScrollView, View, LayoutAnimation, Alert, Modal, Pressable, StyleSheet } from 'react-native';
+import { Dimensions, FlatList, Platform, ScrollView, View, LayoutAnimation, Alert, Modal, Pressable, StyleSheet } from 'react-native';
 import { Button, Card, Dialog, FAB, IconButton, Menu, Portal, SegmentedButtons, Text, TextInput, useTheme, Snackbar, Divider, Searchbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -415,6 +415,41 @@ const ExpensesScreen: React.FC = () => {
       await Sharing.shareAsync(path, { mimeType: 'text/csv', dialogTitle: 'Export Expenses' });
     } else {
       setSnackMsg('Sharing not available on this device');
+    }
+  };
+
+  const exportTransactionsCsv = async () => {
+    try {
+      const rows = all<Expense & { category_name: string }>(
+        `SELECT e.*, ec.name AS category_name
+         FROM expenses e
+         LEFT JOIN expense_categories ec ON ec.id = e.category_id
+         WHERE e.user_id = ?
+         ORDER BY e.expense_date DESC`,
+        [userId!],
+      );
+
+      const header = 'Date,Category,Amount (₹),Description,Notes\n';
+      const lines = rows.map((r) => {
+        const date = r.expense_date ?? '';
+        const category = (r.category_name ?? '').replace(/,/g, ';');
+        const amount = ((r.amount ?? 0) / 100).toFixed(2);
+        const desc = (r.description ?? '').replace(/,/g, ';').replace(/\n/g, ' ');
+        const notes = (r.notes ?? '').replace(/,/g, ';').replace(/\n/g, ' ');
+        return `${date},${category},${amount},${desc},${notes}`;
+      });
+      const csv = header + lines.join('\n');
+
+      const filename = `finvault-expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+      const uri = `${FileSystem.cacheDirectory}${filename}`;
+      await FileSystem.writeAsStringAsync(uri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, { mimeType: 'text/csv', dialogTitle: 'Export Expenses CSV' });
+      }
+    } catch (err: any) {
+      setSnackMsg('Export failed: ' + (err?.message ?? 'Unknown error'));
     }
   };
 
@@ -884,17 +919,38 @@ const ExpensesScreen: React.FC = () => {
               />
             </View>
 
+            {activeTab === 'transactions' && (
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <Button
+                  mode="outlined"
+                  compact
+                  icon="download"
+                  onPress={exportTransactionsCsv}
+                  style={{ borderRadius: theme.roundness }}
+                >
+                  Export CSV
+                </Button>
+              </View>
+            )}
+
             {filteredExpenses.length === 0 ? (
               <SectionCard>
                 <EmptyState icon="cash-multiple" title="No transactions found" message="Try matching something else or log a new transaction." />
               </SectionCard>
             ) : (
               <View style={{ gap: 10 }}>
-                {filteredExpenses.map((e) => {
-                  const isExpanded = expandedExpenseId === e.id;
-                  return (
+                <FlatList
+                  data={filteredExpenses}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                  initialNumToRender={20}
+                  maxToRenderPerBatch={20}
+                  windowSize={5}
+                  ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+                  renderItem={({ item: e }) => {
+                    const isExpanded = expandedExpenseId === e.id;
+                    return (
                     <SectionCard
-                      key={e.id}
                       onPress={() => handleRowPress(e.id)}
                       style={{
                         padding: 12,
@@ -1007,8 +1063,9 @@ const ExpensesScreen: React.FC = () => {
                         </View>
                       )}
                     </SectionCard>
-                  );
-                })}
+                    );
+                  }}
+                />
               </View>
             )}
           </View>

@@ -392,7 +392,8 @@ const DashboardScreen: React.FC = () => {
                 ) : movers.gainers.map((m) => (
                   <Pressable key={m.id} onPress={() => router.push(`/assets/${m.id}/analysis` as any)} style={{ paddingVertical: 4 }}>
                     <Text variant="bodySmall" numberOfLines={1} style={{ fontWeight: '600', color: theme.colors.onSurface }}>{m.name}</Text>
-                    <Text variant="labelSmall" style={{ color: palette.good, fontWeight: '700' }}>+{m.pct}% · +{formatINRCompact(m.change)}</Text>
+                    <Text variant="labelSmall" style={{ color: palette.good, fontWeight: '800' }}>+{m.pct}% today</Text>
+                    <Text variant="labelSmall" style={{ color: palette.good, fontWeight: '500' }}>+{formatINRCompact(m.change)}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -403,7 +404,8 @@ const DashboardScreen: React.FC = () => {
                 ) : movers.losers.map((m) => (
                   <Pressable key={m.id} onPress={() => router.push(`/assets/${m.id}/analysis` as any)} style={{ paddingVertical: 4 }}>
                     <Text variant="bodySmall" numberOfLines={1} style={{ fontWeight: '600', color: theme.colors.onSurface }}>{m.name}</Text>
-                    <Text variant="labelSmall" style={{ color: palette.danger, fontWeight: '700' }}>{m.pct}% · {formatINRCompact(m.change)}</Text>
+                    <Text variant="labelSmall" style={{ color: palette.danger, fontWeight: '800' }}>{m.pct}% today</Text>
+                    <Text variant="labelSmall" style={{ color: palette.danger, fontWeight: '500' }}>{formatINRCompact(m.change)}</Text>
                   </Pressable>
                 ))}
               </View>

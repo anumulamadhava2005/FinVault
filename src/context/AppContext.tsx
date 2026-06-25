@@ -28,6 +28,10 @@ type VaultLockMode = 'biometric' | 'password';
 // SecureStore keys are limited to alphanumeric + . _ -
 const secureKey = (userId: string) => `finvault_pw_${userId.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
+const lockoutKey = (uid: string) => `@finvault_lockout_${uid}`;
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 interface AppState_ {
   ready: boolean;
   userId: string | null;
@@ -81,6 +85,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Tracks when the app moved to background for auto-lock calculation
   const backgroundedAt = useRef<number | null>(null);
+
+  // Tracks the last successful price sync timestamp for rate-limiting
+  const lastSyncAt = useRef<number>(0);
 
   // ── DB init ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -240,16 +247,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ── Login with password ──────────────────────────────────────────────────
   const loginWithPassword = async (password: string): Promise<boolean> => {
     if (!userId) return false;
-    const user = first<{ password_hash: string }>(
-      'SELECT password_hash FROM users WHERE id = ?',
-      [userId],
-    );
+
+    // Check persisted lockout
+    const lockoutRaw = await AsyncStorage.getItem(lockoutKey(userId));
+    if (lockoutRaw) {
+      const { attempts, lockedUntil } = JSON.parse(lockoutRaw);
+      if (lockedUntil && Date.now() < lockedUntil) {
+        return false; // still locked
+      }
+    }
+
+    const user = first<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', [userId]);
     if (!user) return false;
 
     const { ok, needsUpgrade } = await verifyPassword(password, user.password_hash);
-    if (!ok) return false;
 
-    // Silently upgrade v1 hashes to v2 on successful login
+    if (!ok) {
+      // Increment failed attempts
+      const existing = lockoutRaw ? JSON.parse(lockoutRaw) : { attempts: 0, lockedUntil: null };
+      const newAttempts = (existing.attempts || 0) + 1;
+      const newLockout = newAttempts >= MAX_ATTEMPTS ? Date.now() + LOCKOUT_MS : null;
+      await AsyncStorage.setItem(lockoutKey(userId), JSON.stringify({ attempts: newAttempts, lockedUntil: newLockout }));
+      return false;
+    }
+
+    // Successful login — clear lockout
+    await AsyncStorage.removeItem(lockoutKey(userId));
+
     if (needsUpgrade) {
       const newHash = await hashPassword(password);
       run('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, userId]);
@@ -323,8 +347,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Silent price sync ────────────────────────────────────────────────────
   const syncPricesSilentlyInternal = async (activeUserId: string) => {
+    const MIN_SYNC_GAP_MS = 5 * 60 * 1000;
+    if (Date.now() - lastSyncAt.current < MIN_SYNC_GAP_MS) return;
     if (isSyncing) return;
     setIsSyncing(true);
+    lastSyncAt.current = Date.now();
     if (__DEV__) console.log('Starting silent background price sync…');
 
     try {

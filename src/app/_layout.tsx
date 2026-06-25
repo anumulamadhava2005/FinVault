@@ -1,6 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ScrollView, Switch, KeyboardAvoidingView, Platform, Animated, Pressable } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -359,6 +360,8 @@ const SignupScreen: React.FC = () => {
   const [vaultLockMode, setVaultLockMode] = useState<'biometric' | 'password'>('password');
   const [seedDemo, setSeedDemo] = useState(true);
 
+  const [passwordHint, setPasswordHint] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -406,8 +409,10 @@ const SignupScreen: React.FC = () => {
         setError('Please enter a valid email address');
         return;
       }
-      if (!password || password.length < 4) {
-        setError('Master Password must be at least 4 characters');
+      const hasLetter = /[a-zA-Z]/.test(password);
+      const hasDigit = /[0-9]/.test(password);
+      if (!password || password.length < 8 || !hasLetter || !hasDigit) {
+        setError('Master Password must be at least 8 characters and include a letter and a digit');
         return;
       }
       if (password !== confirmPassword) {
@@ -442,6 +447,9 @@ const SignupScreen: React.FC = () => {
         seedDemo,
         dob || undefined
       );
+      if (success && passwordHint.trim()) {
+        await AsyncStorage.setItem(`@finvault_pw_hint_${name.trim()}`, passwordHint.trim());
+      }
       setLoading(false);
       if (!success) {
         setError('Signup failed. Please try again.');
@@ -547,8 +555,17 @@ const SignupScreen: React.FC = () => {
                   onChangeText={setConfirmPassword}
                   secureTextEntry
                   mode="outlined"
-                  style={{ marginBottom: 20 }}
+                  style={{ marginBottom: 12 }}
                   left={<TextInput.Icon icon="lock-check" />}
+                />
+
+                <TextInput
+                  label="Password Hint (optional)"
+                  value={passwordHint}
+                  onChangeText={setPasswordHint}
+                  mode="outlined"
+                  style={{ marginBottom: 20 }}
+                  left={<TextInput.Icon icon="lightbulb-outline" />}
                 />
               </View>
             ) : step === 2 ? (
@@ -765,6 +782,9 @@ const LockScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(profiles.length > 1);
+  const [hint, setHint] = useState<string | null>(null);
+  const [showHint, setShowHint] = useState(false);
+  const [lockoutRemaining, setLockoutRemaining] = useState<number>(0);
 
   const theme = useTheme();
   const user = userId ? first<{ full_name: string }>('SELECT full_name FROM users WHERE id = ?', [userId]) : null;
@@ -802,6 +822,30 @@ const LockScreen: React.FC = () => {
       ])
     ).start();
   }, [showProfileSwitcher, userId]);
+
+  // Load password hint for the current user
+  useEffect(() => {
+    if (!user?.full_name) return;
+    AsyncStorage.getItem(`@finvault_pw_hint_${user.full_name}`).then(h => setHint(h));
+  }, [user?.full_name]);
+
+  // Poll lockout countdown every second
+  useEffect(() => {
+    if (!userId) return;
+    const check = async () => {
+      const raw = await AsyncStorage.getItem(`@finvault_lockout_${userId}`);
+      if (raw) {
+        const { lockedUntil } = JSON.parse(raw);
+        const remaining = lockedUntil ? Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000)) : 0;
+        setLockoutRemaining(remaining);
+      } else {
+        setLockoutRemaining(0);
+      }
+    };
+    check();
+    const interval = setInterval(check, 1000);
+    return () => clearInterval(interval);
+  }, [userId]);
 
   const handlePasswordUnlock = async () => {
     if (!password) return;
@@ -969,6 +1013,7 @@ const LockScreen: React.FC = () => {
           onChangeText={setPassword}
           secureTextEntry
           mode="outlined"
+          editable={lockoutRemaining === 0}
           style={{ marginBottom: 12, backgroundColor: theme.colors.surface }}
           left={<TextInput.Icon icon="lock" color={theme.colors.onSurfaceVariant} />}
         />
@@ -981,7 +1026,14 @@ const LockScreen: React.FC = () => {
           </HelperText>
         ) : null}
 
-        {loading ? (
+        {lockoutRemaining > 0 ? (
+          <View style={{ alignItems: 'center', marginVertical: 12, padding: 12, backgroundColor: theme.colors.errorContainer, borderRadius: theme.roundness }}>
+            <Text style={{ color: theme.colors.onErrorContainer, fontWeight: '700' }}>Too many attempts</Text>
+            <Text style={{ color: theme.colors.onErrorContainer, fontSize: 13, marginTop: 4 }}>
+              Try again in {Math.floor(lockoutRemaining / 60)}:{String(lockoutRemaining % 60).padStart(2, '0')}
+            </Text>
+          </View>
+        ) : loading ? (
           <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginVertical: 12 }} />
         ) : (
           <BouncePressable onPress={handlePasswordUnlock} style={{ marginBottom: 12 }}>
@@ -995,6 +1047,19 @@ const LockScreen: React.FC = () => {
               Unlock with Password
             </Button>
           </BouncePressable>
+        )}
+
+        {hint && !showHint && (
+          <BouncePressable onPress={() => setShowHint(true)} style={{ marginTop: 4 }}>
+            <Button mode="text" pointerEvents="none" textColor={theme.colors.onSurfaceVariant} icon="lightbulb-outline" style={{ borderRadius: theme.roundness }}>
+              Show Hint
+            </Button>
+          </BouncePressable>
+        )}
+        {hint && showHint && (
+          <Text style={{ textAlign: 'center', color: theme.colors.onSurfaceVariant, fontSize: 13, marginTop: 8, fontStyle: 'italic' }}>
+            Hint: {hint}
+          </Text>
         )}
 
         <BouncePressable onPress={loginWithBiometrics}>

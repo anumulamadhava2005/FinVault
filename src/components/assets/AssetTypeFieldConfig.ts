@@ -82,7 +82,7 @@ export const ASSET_TYPE_CONFIGS: Record<string, AssetTypeConfig> = {
   },
   digital_gold: {
     slug: 'digital_gold',
-    label: 'Digital Gold',
+    label: 'Gold',
     icon: 'gold',
     showPricePerUnit: true,
     showQuantity: true,
@@ -93,7 +93,7 @@ export const ASSET_TYPE_CONFIGS: Record<string, AssetTypeConfig> = {
   },
   physical_gold: {
     slug: 'physical_gold',
-    label: 'Gold',
+    label: 'Physical Gold',
     icon: 'ring',
     showPricePerUnit: true,
     showQuantity: true,
@@ -113,18 +113,6 @@ export const ASSET_TYPE_CONFIGS: Record<string, AssetTypeConfig> = {
           { label: '22K', value: '22K' },
           { label: '18K', value: '18K' },
           { label: '14K', value: '14K' },
-        ],
-        detailKey: true,
-      },
-      {
-        key: 'gold_form',
-        label: 'Form',
-        type: 'select',
-        required: true,
-        options: [
-          { label: 'Jewelry', value: 'jewelry' },
-          { label: 'Coin', value: 'coin' },
-          { label: 'Bar', value: 'bar' },
         ],
         detailKey: true,
       },
@@ -166,19 +154,6 @@ export const ASSET_TYPE_CONFIGS: Record<string, AssetTypeConfig> = {
     extraFields: [
       { key: 'account_no', label: 'FD account number', type: 'text', detailKey: true },
       { key: 'nominee', label: 'Nominee', type: 'text', detailKey: true },
-      {
-        key: 'interest_payout',
-        label: 'Interest Payout',
-        type: 'select',
-        required: true,
-        options: [
-          { label: 'Cumulative', value: 'cumulative' },
-          { label: 'Monthly', value: 'monthly' },
-          { label: 'Quarterly', value: 'quarterly' },
-          { label: 'Yearly', value: 'yearly' },
-        ],
-        detailKey: true,
-      },
     ],
   },
   ppf: {

@@ -4,7 +4,7 @@
  * completions/archives. Filterable by category; never affects active totals.
  */
 import React, { useLayoutEffect, useMemo, useState } from 'react';
-import { View, ScrollView, StyleSheet, Pressable } from 'react-native';
+import { View, ScrollView, StyleSheet, Pressable, FlatList } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from 'expo-router';
@@ -94,52 +94,58 @@ const HistoryScreen: React.FC = () => {
         })}
       </ScrollView>
 
-      {events.length === 0 ? (
-        <SectionCard style={{ marginTop: 8 }}>
-          <EmptyState
-            icon="history"
-            title="Nothing here yet"
-            message="As you sell assets, close loans/policies, complete goals or assets mature, they'll be archived here."
-          />
-        </SectionCard>
-      ) : (
-        <View style={{ marginTop: 8, gap: 10 }}>
-          {events.map((e) => {
-            const meta = META[e.event_type] ?? { label: e.event_type, icon: 'history', tone: 'info' as const };
-            const c = toneColor(meta.tone, theme);
-            return (
-              <View key={e.id} style={[styles.row, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
-                <View style={[styles.icon, { backgroundColor: c + '22' }]}>
-                  <MaterialCommunityIcons name={meta.icon as any} size={20} color={c} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }} numberOfLines={1}>
-                      {e.name}
-                    </Text>
-                    <View style={[styles.statusPill, { backgroundColor: c + '18' }]}>
-                      <Text style={{ fontSize: 9, fontWeight: '800', color: c }}>{(e.status ?? meta.label).toUpperCase()}</Text>
-                    </View>
-                  </View>
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 1 }}>
-                    {meta.label}{e.subtype ? ` · ${e.subtype}` : ''} · {fmtDate(e.event_date)}
-                  </Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  {e.amount != null ? (
-                    <Text variant="bodyMedium" style={{ fontWeight: '800', color: theme.colors.onSurface }}>{formatINR(e.amount)}</Text>
-                  ) : null}
-                  {e.pnl != null ? (
-                    <Text variant="labelSmall" style={{ fontWeight: '700', color: e.pnl >= 0 ? palette.good : palette.danger }}>
-                      {e.pnl >= 0 ? '+' : ''}{formatINR(e.pnl)}
-                    </Text>
-                  ) : null}
-                </View>
+      <FlatList
+        data={events}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item: e }) => {
+          const meta = META[e.event_type] ?? { label: e.event_type, icon: 'history', tone: 'info' as const };
+          const c = toneColor(meta.tone, theme);
+          return (
+            <View style={[styles.row, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant, marginBottom: 10 }]}>
+              <View style={[styles.icon, { backgroundColor: c + '22' }]}>
+                <MaterialCommunityIcons name={meta.icon as any} size={20} color={c} />
               </View>
-            );
-          })}
-        </View>
-      )}
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }} numberOfLines={1}>
+                    {e.name}
+                  </Text>
+                  <View style={[styles.statusPill, { backgroundColor: c + '18' }]}>
+                    <Text style={{ fontSize: 9, fontWeight: '800', color: c }}>{(e.status ?? meta.label).toUpperCase()}</Text>
+                  </View>
+                </View>
+                <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 1 }}>
+                  {meta.label}{e.subtype ? ` · ${e.subtype}` : ''} · {fmtDate(e.event_date)}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                {e.amount != null ? (
+                  <Text variant="bodyMedium" style={{ fontWeight: '800', color: theme.colors.onSurface }}>{formatINR(e.amount)}</Text>
+                ) : null}
+                {e.pnl != null ? (
+                  <Text variant="labelSmall" style={{ fontWeight: '700', color: e.pnl >= 0 ? palette.good : palette.danger }}>
+                    {e.pnl >= 0 ? '+' : ''}{formatINR(e.pnl)}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          );
+        }}
+        scrollEnabled={false}
+        initialNumToRender={20}
+        maxToRenderPerBatch={15}
+        windowSize={5}
+        style={{ marginTop: 8 }}
+        ListEmptyComponent={
+          <SectionCard style={{ marginTop: 8 }}>
+            <EmptyState
+              icon="history"
+              title="No history yet"
+              message="Completed lifecycle events (sold assets, closed loans, achieved goals) appear here"
+            />
+          </SectionCard>
+        }
+      />
       <View style={{ height: 24 }} />
     </Screen>
   );

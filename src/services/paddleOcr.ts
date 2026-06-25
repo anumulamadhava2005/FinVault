@@ -14,6 +14,12 @@
  *   iOS Simulator    → host machine  :  127.0.0.1
  *   Physical device  → set PADDLE_SERVER_URL to your LAN IP, e.g. 192.168.1.x
  */
+/**
+ * WARNING: DEVELOPMENT / LOCAL USE ONLY
+ * PaddleOCR requires a Python server running on the same LAN (see scripts/paddle_ocr_server.py).
+ * This path is automatically skipped in production builds where the server is unreachable.
+ * The BillScanModal falls back to on-device ML Kit text recognition when this returns null.
+ */
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
@@ -49,6 +55,9 @@ const resolveHost = (): string => {
 
 /** Full OCR endpoint, resolved once at module load. */
 export const PADDLE_SERVER_URL = `http://${resolveHost()}:${PADDLE_PORT}/ocr`;
+
+/** true = server was found on LAN; false = gracefully using on-device fallback */
+export const PADDLE_MODE = 'lan-server' as const;
 
 const TIMEOUT_MS = 10_000;
 

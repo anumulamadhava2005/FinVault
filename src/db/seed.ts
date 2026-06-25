@@ -25,8 +25,8 @@ export const seedInitialMetadata = (db: SQLiteDatabase, userId: string): Record<
       ['Equity', 'equity'],
       ['Fixed Deposit', 'fd'],
       ['Real Estate', 'real_estate'],
-      ['Digital Gold', 'digital_gold'],
-      ['Gold', 'physical_gold'],
+      ['Gold', 'digital_gold'],
+      ['Physical Gold', 'physical_gold'],
       ['Sovereign Gold Bond', 'sgb'],
       ['PPF', 'ppf'],
     ];

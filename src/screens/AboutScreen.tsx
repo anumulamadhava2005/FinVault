@@ -8,6 +8,14 @@ const APP_VERSION = '1.0.0';
 const BUILD_DATE = 'June 2026';
 const CREATOR = 'Team FinVault — Accenture Innovation Cohort';
 
+const TEAM_MEMBERS = [
+  { name: 'Anumula Madhava', email: 'anumula.madhava@accenture.com', role: 'Lead Developer' },
+  { name: 'R D Shri Harie Vignesh', email: 'r.d.shri.h.vignesh@accenture.com', role: 'Developer' },
+  { name: 'Bandi V. Shreyank', email: 'bandi.v.shreyank@accenture.com', role: 'Developer' },
+  { name: 'Raut Yash K.', email: 'yash.k.raut@accenture.com', role: 'Developer' },
+  { name: 'Sharon David', email: 'sharon.a.david@accenture.com', role: 'Developer' },
+];
+
 const VALUE_PROPS = [
   {
     icon: 'shield-lock',
@@ -354,7 +362,7 @@ const AboutScreen: React.FC = () => {
 
       {/* ── Creator / Team ───────────────────────────────────── */}
       <Section title="Created By">
-        <Card style={{ alignItems: 'center', paddingVertical: 24 }}>
+        <Card style={{ alignItems: 'center', paddingVertical: 20, marginBottom: 10 }}>
           <View
             style={{
               width: 56,
@@ -376,6 +384,43 @@ const AboutScreen: React.FC = () => {
             Designed, developed, and iterated with a focus on real-world financial literacy.
           </Text>
         </Card>
+
+        {TEAM_MEMBERS.map((member, i) => (
+          <Card
+            key={member.email}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 14,
+              paddingVertical: 12,
+              marginBottom: i < TEAM_MEMBERS.length - 1 ? 8 : 0,
+            }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: theme.colors.primaryContainer,
+                justifyContent: 'center',
+                alignItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Text style={{ fontWeight: '800', fontSize: 14, color: theme.colors.onPrimaryContainer }}>
+                {member.name.charAt(0)}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: '700', fontSize: 13.5, color: theme.colors.onSurface }}>
+                {member.name}
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.colors.onSurfaceVariant, marginTop: 1 }}>
+                {member.email}
+              </Text>
+            </View>
+          </Card>
+        ))}
       </Section>
 
       {/* ── App Info ─────────────────────────────────────────── */}

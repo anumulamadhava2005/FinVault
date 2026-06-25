@@ -45,12 +45,17 @@ const TROY_OZ_TO_GRAMS = 31.1035;
 
 /** Fetch indices + gold + FX and cache the snapshot. Safe to call often. */
 export const refreshMarketData = async (): Promise<MarketSnapshot | null> => {
-  const [nifty, sensex, gold, fx] = await Promise.all([
-    fetchYahooSeries('^NSEI'),
-    fetchYahooSeries('^BSESN'),
-    fetchYahooSeries('GC=F'),
-    fetchYahooSeries('USDINR=X'),
-  ]);
+  let nifty: SeriesResult | null, sensex: SeriesResult | null, gold: SeriesResult | null, fx: SeriesResult | null;
+  try {
+    [nifty, sensex, gold, fx] = await Promise.all([
+      fetchYahooSeries('^NSEI'),
+      fetchYahooSeries('^BSESN'),
+      fetchYahooSeries('GC=F'),
+      fetchYahooSeries('USDINR=X'),
+    ]);
+  } catch {
+    return getMarketSnapshot(); // keep serving stale cache on network failure
+  }
 
   const indices: MarketIndex[] = [];
   const mk = (s: SeriesResult | null, symbol: string, label: string, unit: string, transform?: (v: number) => number): void => {
@@ -178,13 +183,17 @@ const parseRss = (xml: string, source: string): FeedItem[] => {
 export const fetchWealthFeed = async (): Promise<FeedItem[]> => {
   const results = await Promise.all(
     RSS_FEEDS.map(async ({ url, source }) => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
-        const res = await fetch(url, { headers: { 'User-Agent': YAHOO_UA, Accept: 'application/rss+xml, application/xml, text/xml' } });
+        const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': YAHOO_UA, Accept: 'application/rss+xml, application/xml, text/xml' } });
         if (!res.ok) return [];
         const xml = await res.text();
         return parseRss(xml, source);
       } catch {
         return [];
+      } finally {
+        clearTimeout(timer);
       }
     }),
   );
@@ -304,52 +313,61 @@ const parseGoogleNews = (xml: string, holdings: string[]): FeedItem[] => {
  * the cache when offline.
  */
 export const fetchPortfolioNews = async (userId: string): Promise<FeedItem[]> => {
-  const queries = buildPortfolioQueries(userId);
-  if (!queries.length) return fetchWealthFeed(); // no holdings → broad market news
+  try {
+    const queries = buildPortfolioQueries(userId);
+    if (!queries.length) return fetchWealthFeed(); // no holdings → broad market news
 
-  const results = await Promise.all(
-    queries.map(async ({ query, holdings }) => {
-      try {
-        const url = `${GOOGLE_NEWS_SEARCH}?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
-        const res = await fetch(url, {
-          headers: { 'User-Agent': YAHOO_UA, Accept: 'application/rss+xml, application/xml, text/xml' },
-        });
-        if (!res.ok) return [];
-        const xml = await res.text();
-        return parseGoogleNews(xml, holdings).slice(0, 6); // freshest few per holding
-      } catch {
-        return [];
-      }
-    }),
-  );
+    const results = await Promise.all(
+      queries.map(async ({ query, holdings }) => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 8000);
+        try {
+          const url = `${GOOGLE_NEWS_SEARCH}?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
+          const res = await fetch(url, {
+            signal: ctrl.signal,
+            headers: { 'User-Agent': YAHOO_UA, Accept: 'application/rss+xml, application/xml, text/xml' },
+          });
+          if (!res.ok) return [];
+          const xml = await res.text();
+          return parseGoogleNews(xml, holdings).slice(0, 6); // freshest few per holding
+        } catch {
+          return [];
+        } finally {
+          clearTimeout(timer);
+        }
+      }),
+    );
 
-  // Merge, de-dupe by title (merging holding tags), sort newest-first.
-  const byKey = new Map<string, FeedItem>();
-  for (const list of results) {
-    for (const it of list) {
-      const key = it.title.toLowerCase().slice(0, 60);
-      const existing = byKey.get(key);
-      if (existing) {
-        existing.holdings = [...new Set([...(existing.holdings ?? []), ...(it.holdings ?? [])])];
-      } else {
-        byKey.set(key, it);
+    // Merge, de-dupe by title (merging holding tags), sort newest-first.
+    const byKey = new Map<string, FeedItem>();
+    for (const list of results) {
+      for (const it of list) {
+        const key = it.title.toLowerCase().slice(0, 60);
+        const existing = byKey.get(key);
+        if (existing) {
+          existing.holdings = [...new Set([...(existing.holdings ?? []), ...(it.holdings ?? [])])];
+        } else {
+          byKey.set(key, it);
+        }
       }
     }
-  }
-  const merged = [...byKey.values()].sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''));
-  const top = merged.slice(0, 40);
+    const merged = [...byKey.values()].sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''));
+    const top = merged.slice(0, 40);
 
-  if (top.length) {
-    try {
-      run('INSERT OR REPLACE INTO market_cache (key, value, updated_at) VALUES (?, ?, ?)', [
-        'feed',
-        JSON.stringify(top),
-        nowISO(),
-      ]);
-    } catch { /* best-effort */ }
-    return top;
+    if (top.length) {
+      try {
+        run('INSERT OR REPLACE INTO market_cache (key, value, updated_at) VALUES (?, ?, ?)', [
+          'feed',
+          JSON.stringify(top),
+          nowISO(),
+        ]);
+      } catch { /* best-effort */ }
+      return top;
+    }
+    // Targeted search returned nothing (offline / rate-limited) — use cache, then generic.
+    const cached = getCachedFeed();
+    return cached.length ? cached : fetchWealthFeed();
+  } catch {
+    return [];
   }
-  // Targeted search returned nothing (offline / rate-limited) — use cache, then generic.
-  const cached = getCachedFeed();
-  return cached.length ? cached : fetchWealthFeed();
 };

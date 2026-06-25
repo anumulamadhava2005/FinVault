@@ -34,6 +34,7 @@ const WealthFeedScreen: React.FC = () => {
   const [feed, setFeed] = useState<FeedItem[]>(getCachedFeed());
   const [loading, setLoading] = useState(feed.length === 0);
   const [refreshing, setRefreshing] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -65,11 +66,22 @@ const WealthFeedScreen: React.FC = () => {
   };
 
   const load = useCallback(async () => {
-    const [snap, items] = await Promise.all([refreshMarketData(), fetchPortfolioNews(userId!)]);
-    if (snap) setSnapshot(snap);
-    if (items.length) setFeed(items);
-    setLoading(false);
-    setRefreshing(false);
+    setIsOffline(false);
+    try {
+      const [snap, items] = await Promise.all([refreshMarketData(), fetchPortfolioNews(userId!)]);
+      if (snap) {
+        setSnapshot(snap);
+        setIsOffline(false);
+      } else {
+        setIsOffline(true);
+      }
+      if (items.length) setFeed(items);
+    } catch {
+      setIsOffline(true);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
@@ -87,6 +99,23 @@ const WealthFeedScreen: React.FC = () => {
       contentContainerStyle={{ padding: 18, paddingBottom: 110, gap: 16 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
     >
+      {isOffline && (
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          backgroundColor: theme.colors.errorContainer,
+          borderRadius: theme.roundness,
+          padding: 10,
+          marginBottom: 10,
+        }}>
+          <MaterialCommunityIcons name="wifi-off" size={16} color={theme.colors.onErrorContainer} />
+          <Text style={{ color: theme.colors.onErrorContainer, fontSize: 13, fontWeight: '600', flex: 1 }}>
+            Offline — showing last cached data
+          </Text>
+        </View>
+      )}
+
       {/* Market snapshot */}
       <SectionCard title="Markets Today">
         {snapshot ? (

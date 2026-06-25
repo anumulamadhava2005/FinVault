@@ -79,18 +79,18 @@ export const RISK_TARGET: Record<string, number> = {
 };
 
 export const EQUITY_TYPES = new Set(['Equity', 'Mutual Funds', 'Mutual Fund', 'Real Estate', 'Crypto', 'Stocks', 'NPS']);
-export const LIQUID_TYPES = new Set(['Savings', 'Fixed Deposit', 'Gold', 'Digital Gold', 'Mutual Funds', 'Cash', 'Bank Account']);
+export const LIQUID_TYPES = new Set(['Savings', 'Fixed Deposit', 'Gold', 'Physical Gold', 'Mutual Funds', 'Cash', 'Bank Account']);
 
 export const HIGH_INTEREST_PCT = 12.0;
 
 export const BENCHMARKS: Record<string, Record<string, number>> = {
-  conservative: { Equity: 20, 'Mutual Funds': 20, 'Fixed Deposit': 35, PPF: 15, 'Sovereign Gold Bond': 5, 'Digital/Physical Gold': 5 },
-  moderate: { Equity: 35, 'Mutual Funds': 30, 'Fixed Deposit': 15, PPF: 10, 'Sovereign Gold Bond': 5, 'Digital/Physical Gold': 5 },
-  aggressive: { Equity: 60, 'Mutual Funds': 20, 'Fixed Deposit': 5, PPF: 5, 'Sovereign Gold Bond': 5, 'Digital/Physical Gold': 5 },
+  conservative: { Equity: 20, 'Mutual Funds': 20, 'Fixed Deposit': 35, PPF: 15, 'Sovereign Gold Bond': 5, 'Gold/Physical Gold': 5 },
+  moderate: { Equity: 35, 'Mutual Funds': 30, 'Fixed Deposit': 15, PPF: 10, 'Sovereign Gold Bond': 5, 'Gold/Physical Gold': 5 },
+  aggressive: { Equity: 60, 'Mutual Funds': 20, 'Fixed Deposit': 5, PPF: 5, 'Sovereign Gold Bond': 5, 'Gold/Physical Gold': 5 },
 };
 export const BENCH_CLASS: Record<string, string> = {
-  'Digital Gold': 'Digital/Physical Gold',
-  Gold: 'Digital/Physical Gold',
+  Gold: 'Gold/Physical Gold',
+  'Physical Gold': 'Gold/Physical Gold',
 };
 
 export const titleCase = (s: string) =>
@@ -102,8 +102,8 @@ export const ASSET_TYPE_KEY_MAP: Record<string, string> = {
   mutual_fund: 'Mutual Funds',
   equity: 'Equity',
   fd: 'Fixed Deposit',
-  digital_gold: 'Digital Gold',
-  physical_gold: 'Gold',
+  digital_gold: 'Gold',
+  physical_gold: 'Physical Gold',
   sgb: 'Sovereign Gold Bond',
   ppf: 'PPF',
   real_estate: 'Real Estate',

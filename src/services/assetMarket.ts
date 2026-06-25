@@ -10,6 +10,7 @@ import { all, first, run } from '../db';
 import type { Asset } from '../models/types';
 import { nowISO, todayISO, parseISO, monthsBetween } from '../utils/date';
 import { fetchYahooChart } from '../utils/yahoo';
+import { nseQuote } from '../api/assets/nseApi';
 
 type AssetRow = Asset & { type_name: string; slug: string };
 
@@ -109,7 +110,26 @@ async function fetchOne(asset: AssetRow, fx: number): Promise<AssetMarket> {
   try {
     if ((asset.slug === 'equity') && asset.ticker) {
       const sym = asset.ticker.includes('.') ? asset.ticker : `${asset.ticker}.NS`;
-      const d = await yahooDaily(sym);
+      // Strip .NS — NSE direct API uses bare symbols (e.g. 'RELIANCE', not 'RELIANCE.NS')
+      const nseSym = sym.endsWith('.NS') ? sym.slice(0, -3) : sym.endsWith('.BO') ? null : sym;
+      // Fetch NSE (reliable prevClose) + Yahoo (historical monthly series) in parallel.
+      const [nse, d] = await Promise.all([
+        nseSym ? nseQuote(nseSym) : Promise.resolve(null),
+        yahooDaily(sym),
+      ]);
+      if (nse && qty > 0) {
+        const prevClose = nse.previousClose;
+        return {
+          asset_id: asset.id,
+          day_change_pct: Number(nse.pChange.toFixed(2)),
+          day_change_value: prevClose ? Math.round(qty * (nse.lastPrice - prevClose) * 100) : 0,
+          monthly: d ? buildMonthly(d.closes, qty, nse.lastPrice) : buildMonthly([], qty, nse.lastPrice),
+          source: `NSE · ${nseSym}`,
+          modeled: false,
+          updated_at: nowISO(),
+        };
+      }
+      // Fallback: Yahoo Finance (prevClose from chartPreviousClose metadata)
       if (d && qty > 0) {
         return {
           asset_id: asset.id,
@@ -170,24 +190,32 @@ async function fetchOne(asset: AssetRow, fx: number): Promise<AssetMarket> {
         clearTimeout(mfTimer);
       }
     } else if (asset.slug === 'digital_gold' || asset.slug === 'physical_gold') {
-      // Primary: GOLDBEES.NS (Nippon India Gold BeES) — 0.01g/unit → ×100 = ₹/gram
-      // Tracks actual Indian gold price including import duty and GST
-      const goldbees = await yahooDaily('GOLDBEES.NS');
+      // qty is in grams. GOLDBEES (Nippon India Gold BeES) = 0.01 g/unit,
+      // so price × 100 = ₹/gram. NSE gives actual exchange previousClose
+      // (not Yahoo's dividend-adjusted historical series), fixing false +45% swings.
+      // Yahoo GOLDBEES.NS 1y series is fetched only for the monthly chart closes.
+      const [goldbees, gld1y] = await Promise.all([
+        nseQuote('GOLDBEES'),
+        yahooDaily('GOLDBEES.NS'),
+      ]);
       if (goldbees && qty > 0) {
-        const priceInr = goldbees.price * 100;
-        const prevInr = goldbees.prevClose * 100;
-        const closesInr = goldbees.closes.map((c) => ({ label: c.label, value: c.value * 100 }));
+        const priceInr = goldbees.lastPrice * 100;
+        const prevInr = goldbees.previousClose * 100;
+        const closesInr = gld1y
+          ? gld1y.closes.map((c) => ({ label: c.label, value: c.value * 100 }))
+          : [];
         return {
           asset_id: asset.id,
-          day_change_pct: prevInr ? Number((((priceInr - prevInr) / prevInr) * 100).toFixed(2)) : 0,
+          day_change_pct: Number(goldbees.pChange.toFixed(2)),
           day_change_value: Math.round(qty * (priceInr - prevInr) * 100),
           monthly: buildMonthly(closesInr, qty, priceInr),
-          source: 'Yahoo · GOLDBEES.NS',
+          source: 'NSE · GOLDBEES',
           modeled: false,
           updated_at: nowISO(),
         };
       }
-      // Fallback: COMEX GC=F futures + USD/INR spot
+      // Fallback: COMEX GC=F × USDINR (absolute price ~15–20% below MCX;
+      // day-change % is accurate because USDINR cancels in the ratio).
       const d = await yahooDaily('GC=F');
       if (d && qty > 0) {
         const toInrGram = (usdOz: number) => (usdOz / TROY_OZ_TO_GRAMS) * fx;

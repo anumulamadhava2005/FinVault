@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import {
   ActivityIndicator,
@@ -13,6 +13,8 @@ import {
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { Screen, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
 import { exportBackup, importBackup } from '../services/backup';
@@ -24,11 +26,16 @@ const BackupScreen: React.FC = () => {
 
   const [snack, setSnack] = useState('');
   const [busy, setBusy] = useState(false);
+  const [lastBackupDate, setLastBackupDate] = useState<string | null>(null);
 
   // Import confirmation dialog
   const [importOpen, setImportOpen] = useState(false);
   const [importPassword, setImportPassword] = useState('');
   const [showImportPw, setShowImportPw] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(`@finvault_last_backup_${userId}`).then(d => setLastBackupDate(d));
+  }, [userId]);
 
   const doExport = async () => {
     if (!userId || !masterPassword) {
@@ -39,6 +46,10 @@ const BackupScreen: React.FC = () => {
     const result = await exportBackup(userId, masterPassword);
     setBusy(false);
     setSnack(result.message);
+    if (result.ok) {
+      await AsyncStorage.setItem(`@finvault_last_backup_${userId}`, new Date().toISOString());
+      setLastBackupDate(new Date().toISOString());
+    }
   };
 
   const doImport = async () => {
@@ -100,6 +111,31 @@ const BackupScreen: React.FC = () => {
             description="Attached images / PDFs (local file paths won't survive across devices)"
             left={(p) => <List.Icon {...p} icon="image-off-outline" color={theme.colors.onSurfaceVariant} />}
           />
+
+          {(() => {
+            if (!lastBackupDate) {
+              return (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.errorContainer, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <MaterialCommunityIcons name="shield-alert-outline" size={18} color={theme.colors.onErrorContainer} />
+                  <Text style={{ color: theme.colors.onErrorContainer, fontSize: 13, flex: 1 }}>
+                    No backup found. Create a backup to protect your data.
+                  </Text>
+                </View>
+              );
+            }
+            const daysSince = Math.floor((Date.now() - new Date(lastBackupDate).getTime()) / 86400000);
+            if (daysSince > 7) {
+              return (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.colors.tertiaryContainer, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <MaterialCommunityIcons name="clock-alert-outline" size={18} color={theme.colors.onTertiaryContainer} />
+                  <Text style={{ color: theme.colors.onTertiaryContainer, fontSize: 13, flex: 1 }}>
+                    Last backup was {daysSince} days ago. Consider creating a new backup.
+                  </Text>
+                </View>
+              );
+            }
+            return null;
+          })()}
 
           {busy ? (
             <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 16 }} />

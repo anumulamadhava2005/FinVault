@@ -61,10 +61,10 @@ const DATA_FIXES = [
    WHERE asset_type_id IN (SELECT id FROM asset_types WHERE slug = 'gold')`,
   // 2. Delete the standalone 'Gold' asset type so it no longer appears in dropdowns
   `DELETE FROM asset_types WHERE slug = 'gold'`,
-  // 3. Ensure 'digital_gold' is named 'Digital Gold'
-  `UPDATE asset_types SET name = 'Digital Gold' WHERE slug = 'digital_gold' AND name != 'Digital Gold'`,
-  // 4. Rename 'Physical Gold' to 'Gold'
-  `UPDATE asset_types SET name = 'Gold' WHERE slug = 'physical_gold' AND name != 'Gold'`,
+  // 3. Ensure 'digital_gold' is named 'Gold'
+  `UPDATE asset_types SET name = 'Gold' WHERE slug = 'digital_gold' AND name != 'Gold'`,
+  // 4. Ensure 'physical_gold' is named 'Physical Gold'
+  `UPDATE asset_types SET name = 'Physical Gold' WHERE slug = 'physical_gold' AND name != 'Physical Gold'`,
   // 5. Ensure NPS and Bank Account asset types exist (fixed ids → idempotent).
   `INSERT OR IGNORE INTO asset_types (id, name, slug, sort_order) VALUES ('type_nps', 'NPS', 'nps', 8)`,
   `INSERT OR IGNORE INTO asset_types (id, name, slug, sort_order) VALUES ('type_savings', 'Bank Account', 'savings', 9)`,

@@ -102,6 +102,9 @@ const TOTAL_KEYWORDS: { re: RegExp; weight: number }[] = [
 // Lines we should never read an amount or item from (taxes, ids, metadata).
 const NEGATIVE_RE = /(sub\s*total|tax|gst|cgst|sgst|igst|cess|discount|change|\bcash\b|round|invoice|bill\s*no|phone|mobile|gstin|tin|\bdate\b|\btime\b|mode\s*:)/i;
 
+// Additional patterns to exclude from *line items only* (not used for total detection).
+const ITEM_SKIP_RE = /(service\s*(charge|tax|fee)|cover\s*charge|packing\s*(charge)?|delivery\s*(fee|charge)?|\btip\b|gratuity|min(imum)?\s*(cover|charge)|extra\s*charge|staff\s*welfare)/i;
+
 // Customer / column-header / metadata line prefixes — never a merchant or item.
 const META_RE = /^(name|table|bill|invoice|gst|gstin|date|time|receipt|item|price|qty|qnty|order|token|cashier|server|mode)\b/i;
 
@@ -182,23 +185,101 @@ const detectMerchant = (lines: string[]): string | null => {
 
 const detectLineItems = (lines: string[]): BillLineItem[] => {
   const items: BillLineItem[] = [];
-  for (const line of lines) {
-    if (NEGATIVE_RE.test(line) || ADDRESS_RE.test(line) || META_RE.test(line)) continue;
-    if (TOTAL_KEYWORDS.some((k) => k.re.test(line))) continue;
-    // "<name> .... <price>" on the SAME line — decimal optional. When OCR splits
-    // names and prices into separate columns no line matches, so we emit nothing
-    // rather than pairing an address/date with a stray number.
-    const m = line.match(/^(.*?[A-Za-z].*?)\s+(?:₹|rs\.?|inr)?\s*((?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?)\s*$/i);
-    if (m) {
-      const name = m[1].replace(/[.\-•|]+$/, '').replace(/\s+/g, ' ').trim();
-      const price = toNumber(m[2]);
-      if (name.length >= 2 && name.length <= 40 && isPlausibleAmount(price) && !MERCHANT_KEYWORDS.test(name)) {
-        items.push({ name, price });
+
+  const shouldSkip = (line: string) =>
+    NEGATIVE_RE.test(line) ||
+    ITEM_SKIP_RE.test(line) ||
+    ADDRESS_RE.test(line) ||
+    META_RE.test(line) ||
+    TOTAL_KEYWORDS.some((k) => k.re.test(line));
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (shouldSkip(line)) continue;
+
+    // Strip leading serial number or "Nx"/"N x" quantity prefix: "1.", "02.", "3 x ", "4x "
+    const stripped = line.replace(/^\s*\d{1,3}\.?\s*(?:x\s+)?/, '').trim();
+
+    // All money-like numbers on this line
+    const amounts = moneyIn(line).filter(isPlausibleAmount);
+
+    if (amounts.length === 0) {
+      // ── Column-split OCR: name line with no price ────────────────────────────
+      // If the very next non-blank, non-skip line contains exactly one price,
+      // treat it as a split name+price pair (common in columnar restaurant OCR).
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === '') j++;
+      if (j < lines.length && !shouldSkip(lines[j])) {
+        const nextAmounts = moneyIn(lines[j]).filter(isPlausibleAmount);
+        if (nextAmounts.length === 1) {
+          const name = stripped.replace(/[.\-•|]+$/, '').replace(/\s+/g, ' ').trim();
+          const hasLetters = (name.match(/[A-Za-z]/g) || []).length >= 2;
+          if (hasLetters && name.length >= 2 && name.length <= 60) {
+            items.push({ name, price: nextAmounts[0] });
+            i = j; // consume the price line
+            if (items.length >= 20) break;
+          }
+        }
+      }
+      continue;
+    }
+
+    // ── Multi-column line: "Name  [qty]  [rate]  total" ────────────────────────
+    // The LAST money value is always the row total (unit price × qty).
+    const total = amounts[amounts.length - 1];
+
+    // Detect optional quantity: a small integer (1–50) that, when multiplied by
+    // the second-to-last amount, approximates the total (qty × rate = total).
+    let qty = 1;
+    if (amounts.length >= 3) {
+      const possibleQty = amounts[amounts.length - 3];
+      const possibleRate = amounts[amounts.length - 2];
+      if (
+        Number.isInteger(possibleQty) &&
+        possibleQty >= 1 &&
+        possibleQty <= 50 &&
+        Math.abs(possibleQty * possibleRate - total) < total * 0.02
+      ) {
+        qty = possibleQty;
       }
     }
-    if (items.length >= 15) break;
+    // Also handle "2x" / "x2" style inline multipliers when amounts has two entries
+    if (qty === 1 && amounts.length === 2) {
+      const inline = stripped.match(/\b(\d{1,2})\s*x\s*\d|\bx\s*(\d{1,2})\b/i);
+      if (inline) {
+        const q = Number(inline[1] ?? inline[2]);
+        if (q >= 1 && q <= 50) qty = q;
+      }
+    }
+
+    // Name: text before the first number cluster, with trailing dots/dashes removed
+    let nameRaw = stripped
+      .replace(/\s+(?:₹|rs\.?|inr|mrp)?\s*[\d,]+(?:\.\d{1,2})?(?:\s+[\d,]+(?:\.\d{1,2})?)*\s*$/, '')
+      .replace(/\s+x\s*\d{1,2}\b|\b\d{1,2}\s*x\s+/i, '') // strip "2x" / "x 2" inline multipliers
+      .replace(/[.\-•|×]+\s*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!nameRaw || !/[A-Za-z]/.test(nameRaw)) continue;
+    if ((nameRaw.match(/[A-Za-z]/g) || []).length < 2) continue;
+    if (nameRaw.length < 2 || nameRaw.length > 60) continue;
+    // Skip date-like strings and pure numbers
+    if (/^\d+$/.test(nameRaw) || /\d{2}[\/\-.]\d{2}/.test(nameRaw)) continue;
+
+    // Append "×N" to the display name when quantity > 1 so it's visible in the review card
+    const name = qty > 1 ? `${nameRaw} ×${qty}` : nameRaw;
+    items.push({ name, price: total });
+    if (items.length >= 20) break;
   }
-  return items;
+
+  // Remove exact duplicates (same name+price) that OCR noise can create
+  const seen = new Set<string>();
+  return items.filter((it) => {
+    const key = `${it.name.toLowerCase()}|${it.price}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 export const parseBill = (rawText: string): ParsedBill => {

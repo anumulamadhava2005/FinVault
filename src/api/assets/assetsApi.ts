@@ -1,13 +1,12 @@
 /**
  * Live price APIs — no backend required.
  *
- * • Equity  → Yahoo Finance v8 chart API (NSE tickers, suffix `.NS`)
- *             Standard non-commercial client usage (crumb/cookie session).
+ * • Equity  → NSE India direct (quote-equity endpoint; actual exchange prevClose).
+ *             Fallback: Yahoo Finance v8 chart API (NSE .NS / BSE .BO tickers).
  * • MF NAV  → api.mfapi.in (community wrapper around official AMFI NAV data;
  *             same scheme codes as AMFI, updated daily)
- * • Gold    → Nippon India Gold BeES (GOLDBEES.NS, 0.01 g/unit) — reflects
- *             Indian market price including import duty + GST.
- *             Fallback: COMEX GC=F × USDINR=X (may differ 5–15% from MCX).
+ * • Gold    → GOLDBEES.NS via NSE direct (0.01 g/unit → ×100 = ₹/gram; Indian MCX price).
+ *             Fallback: COMEX GC=F × USDINR=X (day-% accurate; absolute ~15–20% below MCX).
  */
 
 export interface ApiResponse<T> {
@@ -15,6 +14,7 @@ export interface ApiResponse<T> {
   error: string | null;
 }
 import { fetchYahooChart } from '../../utils/yahoo';
+import { nseQuote } from './nseApi';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -49,27 +49,32 @@ async function yahooPrice(
 
 // ─── Equity ─────────────────────────────────────────────────────────────────
 
-/** Fetch latest price for an NSE/BSE ticker via Yahoo Finance. */
+/** Fetch latest price for an NSE/BSE ticker. NSE direct first, Yahoo Finance fallback. */
 export async function fetchEquityPrice(
   ticker: string,
   _token?: string,
   signal?: AbortSignal,
 ): Promise<ApiResponse<EquityPriceResult>> {
-  // Append .NS if no exchange suffix present
+  // NSE direct: bare symbol (strip .NS / .BO suffix if present)
+  const bareTicker = ticker.replace(/\.(NS|BO)$/i, '');
+  if (!ticker.includes('.BO')) {
+    const nse = await nseQuote(bareTicker, signal);
+    if (nse) {
+      return { data: { symbol: bareTicker, price: nse.lastPrice, currency: 'INR' }, error: null };
+    }
+  }
+
+  // Fallback: Yahoo Finance
   const symbol = ticker.includes('.') ? ticker : `${ticker}.NS`;
   const result = await yahooPrice(symbol, signal);
   if (!result) {
-    // Fallback: try BSE suffix
     if (!ticker.includes('.')) {
       const bse = await yahooPrice(`${ticker}.BO`, signal);
       if (bse) {
-        return {
-          data: { symbol: `${ticker}.BO`, price: bse.price, currency: bse.currency },
-          error: null,
-        };
+        return { data: { symbol: `${ticker}.BO`, price: bse.price, currency: bse.currency }, error: null };
       }
     }
-    return { data: null, error: 'Unable to fetch price from Yahoo Finance' };
+    return { data: null, error: 'Unable to fetch price' };
   }
   return { data: { symbol, price: result.price, currency: result.currency }, error: null };
 }
@@ -139,25 +144,22 @@ export async function fetchMutualFundNav(
 // ─── Gold ───────────────────────────────────────────────────────────────────
 
 const TROY_OZ_TO_GRAMS = 31.1035;
-// GOLDBEES: Nippon India Gold BeES ETF — 1 unit = 0.01 g of 99.5% purity gold.
-// Price × 100 = ₹/gram. Reflects actual Indian market price (incl. import duty + GST).
-const GOLDBEES_SYMBOL = 'GOLDBEES.NS';
-const GOLDBEES_GRAMS_PER_UNIT = 0.01;
 
 /**
  * Fetch current gold price in INR/gram.
- * Primary: GOLDBEES.NS (Indian ETF, ~Indian MCX price).
- * Fallback: COMEX GC=F futures × USDINR=X (may underestimate by 5-15% vs MCX).
+ * Primary: GOLDBEES via NSE direct — Nippon India Gold BeES ETF (0.01 g/unit),
+ * price × 100 = ₹/gram. Reflects Indian market price (import duty + GST included).
+ * Fallback: COMEX GC=F × USDINR=X (day-% accurate; absolute ~15–20% below MCX).
  */
 export async function fetchGoldPrice(
   _token?: string,
   signal?: AbortSignal,
 ): Promise<ApiResponse<GoldPriceResult>> {
-  // Primary: GOLDBEES ETF — one unit = 0.01g, so price / 0.01 = ₹/gram
+  // Primary: NSE GOLDBEES (0.01 g/unit → price / 0.01 = ₹/gram)
   try {
-    const goldbees = await yahooPrice(GOLDBEES_SYMBOL, signal);
+    const goldbees = await nseQuote('GOLDBEES', signal);
     if (goldbees) {
-      const price_per_gram_inr = goldbees.price / GOLDBEES_GRAMS_PER_UNIT;
+      const price_per_gram_inr = goldbees.lastPrice * 100;
       return {
         data: { price_per_gram_inr: Math.round(price_per_gram_inr * 100) / 100, gc_usd: 0, usd_inr: 0 },
         error: null,

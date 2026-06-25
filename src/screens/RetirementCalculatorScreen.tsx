@@ -97,6 +97,23 @@ const RetirementCalculatorScreen: React.FC = () => {
     [currentAge, retireAge, lifeExpectancy, monthlyExpense, inflation, expectedReturn, postReturn, currentCorpus, monthlySip],
   );
 
+  const validationError = useMemo(() => {
+    const ca = num(currentAge);
+    const ra = num(retireAge);
+    const le = num(lifeExpectancy);
+    const me = num(monthlyExpense);
+    const inf = num(inflation);
+    const er = num(expectedReturn);
+
+    if (!ca || ca < 1 || ca > 100) return 'Current age must be between 1 and 100';
+    if (!ra || ra <= ca) return 'Retirement age must be greater than current age';
+    if (!le || le <= ra) return 'Life expectancy must be greater than retirement age';
+    if (me <= 0) return 'Monthly expense must be greater than 0';
+    if (inf < 0 || inf > 30) return 'Inflation must be between 0% and 30%';
+    if (er < 0 || er > 50) return 'Expected return must be between 0% and 50%';
+    return null;
+  }, [currentAge, retireAge, lifeExpectancy, monthlyExpense, inflation, expectedReturn]);
+
   const field = (label: string, value: string, setter: (v: string) => void, suffix?: string) => (
     <TextInput
       label={label}
@@ -116,49 +133,55 @@ const RetirementCalculatorScreen: React.FC = () => {
   return (
     <Screen>
       {/* Result hero */}
-      <SectionCard style={{ marginTop: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <MaterialCommunityIcons
-            name={plan.onTrack ? 'check-decagram' : 'alert-decagram'}
-            size={40}
-            color={coverColor}
-          />
-          <View style={{ flex: 1 }}>
-            <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700' }}>RETIREMENT READINESS</Text>
-            <Text variant="headlineSmall" style={{ fontWeight: '800', color: coverColor }}>
-              {plan.onTrack ? 'On Track 🎉' : `${plan.coverPct}% Funded`}
-            </Text>
+      {validationError ? (
+        <View style={{ backgroundColor: theme.colors.errorContainer, borderRadius: theme.roundness, padding: 14, marginVertical: 8 }}>
+          <Text style={{ color: theme.colors.onErrorContainer, fontWeight: '600' }}>{validationError}</Text>
+        </View>
+      ) : (
+        <SectionCard style={{ marginTop: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <MaterialCommunityIcons
+              name={plan.onTrack ? 'check-decagram' : 'alert-decagram'}
+              size={40}
+              color={coverColor}
+            />
+            <View style={{ flex: 1 }}>
+              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700' }}>RETIREMENT READINESS</Text>
+              <Text variant="headlineSmall" style={{ fontWeight: '800', color: coverColor }}>
+                {plan.onTrack ? 'On Track 🎉' : `${plan.coverPct}% Funded`}
+              </Text>
+            </View>
           </View>
-        </View>
-        <View style={{ marginTop: 14 }}>
-          <ProgressBar pct={cover} color={coverColor} height={10} />
-        </View>
-        <Row style={{ marginTop: 16 }}>
-          <Kpi flex label="Corpus Needed" value={rs(plan.requiredCorpus)} sub={`at age ${num(retireAge)}`} />
-          <Kpi flex label="Projected" value={rs(plan.projectedCorpus)} subTone={plan.onTrack ? 'good' : 'muted'} />
-        </Row>
-        <Row style={{ marginTop: 10 }}>
-          {plan.onTrack ? (
-            <Kpi flex label="Surplus" value={rs(Math.abs(plan.gap))} subTone="good" />
-          ) : (
-            <Kpi flex label="Shortfall" value={rs(plan.gap)} subTone="bad" />
+          <View style={{ marginTop: 14 }}>
+            <ProgressBar pct={cover} color={coverColor} height={10} />
+          </View>
+          <Row style={{ marginTop: 16 }}>
+            <Kpi flex label="Corpus Needed" value={rs(plan.requiredCorpus)} sub={`at age ${num(retireAge)}`} />
+            <Kpi flex label="Projected" value={rs(plan.projectedCorpus)} subTone={plan.onTrack ? 'good' : 'muted'} />
+          </Row>
+          <Row style={{ marginTop: 10 }}>
+            {plan.onTrack ? (
+              <Kpi flex label="Surplus" value={rs(Math.abs(plan.gap))} subTone="good" />
+            ) : (
+              <Kpi flex label="Shortfall" value={rs(plan.gap)} subTone="bad" />
+            )}
+            <Kpi
+              flex
+              label="Extra SIP Needed"
+              value={plan.additionalSip > 0 ? `${rs(plan.additionalSip)}/mo` : '—'}
+              subTone={plan.additionalSip > 0 ? 'bad' : 'good'}
+            />
+          </Row>
+          {!plan.onTrack && plan.additionalSip > 0 && (
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 12 }}>
+              Investing an extra {rs(plan.additionalSip)}/month (on top of your current {rs(num(monthlySip))}/month) at {num(expectedReturn)}% should close the gap by age {num(retireAge)}.
+            </Text>
           )}
-          <Kpi
-            flex
-            label="Extra SIP Needed"
-            value={plan.additionalSip > 0 ? `${rs(plan.additionalSip)}/mo` : '—'}
-            subTone={plan.additionalSip > 0 ? 'bad' : 'good'}
-          />
-        </Row>
-        {!plan.onTrack && plan.additionalSip > 0 && (
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 12 }}>
-            Investing an extra {rs(plan.additionalSip)}/month (on top of your current {rs(num(monthlySip))}/month) at {num(expectedReturn)}% should close the gap by age {num(retireAge)}.
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 12 }}>
+            At retirement your {rs(num(monthlyExpense))}/mo lifestyle becomes ≈ {rs(plan.futureMonthlyExpense)}/mo after {num(inflation)}% inflation over {plan.years} years.
           </Text>
-        )}
-        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 12 }}>
-          At retirement your {rs(num(monthlyExpense))}/mo lifestyle becomes ≈ {rs(plan.futureMonthlyExpense)}/mo after {num(inflation)}% inflation over {plan.years} years.
-        </Text>
-      </SectionCard>
+        </SectionCard>
+      )}
 
       {/* Inputs */}
       <SectionCard title="Your Details">

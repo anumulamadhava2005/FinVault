@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { RefreshControl, View, ScrollView } from 'react-native';
+import { RefreshControl, View, ScrollView, FlatList } from 'react-native';
 import { Button, Dialog, FAB, Portal, Searchbar, Snackbar, Text, useTheme, IconButton, Badge, Divider } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -518,31 +518,37 @@ const AssetsScreen: React.FC = () => {
         </View>
 
         {/* Holdings list */}
-        {filteredAssets.length === 0 ? (
-          <SectionCard style={{ marginTop: 12 }}>
-            <EmptyState
-              icon="chart-line"
-              title="No holdings found"
-              message={searchQuery ? 'Try matching something else.' : "You haven't added holdings of this type."}
-            />
-          </SectionCard>
-        ) : (
-          <View style={{ marginTop: 10, paddingBottom: 100 }}>
-            {filteredAssets.map((a) => (
+        <View style={{ marginTop: 10, paddingBottom: 100 }}>
+          <FlatList
+            data={filteredAssets}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
               <AssetRow
-                key={a.id}
-                asset={a}
+                asset={item}
                 selectMode={selectMode}
-                selected={selectedAssetIds.has(a.id)}
+                selected={selectedAssetIds.has(item.id)}
                 onSelectToggle={handleSelectToggle}
-                onPress={() => handleView(a.id)}
-                onEdit={() => handleEdit(a.id)}
-                onDelete={() => handleDelete(a.id)}
-                onSip={() => handleSip(a.id)}
+                onPress={() => handleView(item.id)}
+                onEdit={() => handleEdit(item.id)}
+                onDelete={() => handleDelete(item.id)}
+                onSip={() => handleSip(item.id)}
               />
-            ))}
-          </View>
-        )}
+            )}
+            scrollEnabled={false}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            ListEmptyComponent={
+              <SectionCard style={{ marginTop: 12 }}>
+                <EmptyState
+                  icon="chart-line"
+                  title="No holdings found"
+                  message={searchQuery ? 'Try matching something else.' : "You haven't added holdings of this type."}
+                />
+              </SectionCard>
+            }
+          />
+        </View>
       </Screen>
 
       {/* FAB pill - compliance with Fitts's law */}

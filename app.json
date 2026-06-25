@@ -7,9 +7,19 @@
     "icon": "./assets/images/icon.png",
     "scheme": "finvault",
     "userInterfaceStyle": "automatic",
+    "privacy": "public",
     "ios": {
       "icon": "./assets/images/icon.png",
-      "bundleIdentifier": "com.finvault.app"
+      "bundleIdentifier": "com.finvault.app",
+      "supportsTablet": false,
+      "splash": {
+        "image": "./assets/images/splash-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#181818"
+      },
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "FinVault uses Face ID to securely unlock your financial data."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -20,7 +30,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.finvault.app",
-      "softwareKeyboardLayoutMode": "pan"
+      "softwareKeyboardLayoutMode": "pan",
+      "versionCode": 1
     },
     "web": {
       "output": "static",

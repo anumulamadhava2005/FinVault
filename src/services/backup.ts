@@ -19,9 +19,9 @@
  *     "payload":   "aes:<ivHex>:<ciphertextHex>"
  *   }
  *
- * Decrypted payload — JSON with one key per table.
- * Note: asset_images URIs reference local device paths and are excluded
- *       because those paths will not exist on a different device.
+ * Decrypted payload — JSON with one key per table, plus:
+ *   "asset_images_meta" — array of asset_images rows
+ *   "asset_images_data" — [{ <image_id>: <base64> }] bundled image files
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
@@ -53,6 +53,7 @@ const USER_TABLES = [
   'notifications',
   'networth_snapshots',
   'history_events',
+  'asset_images',
 ] as const;
 
 export interface BackupResult {
@@ -79,6 +80,29 @@ export async function exportBackup(
        WHERE fg.user_id = ?`,
       [userId],
     );
+
+    // Bundle asset image files as base64 so they survive device transfers
+    const imageRows = all<{ id: string; uri: string; asset_id: string; filename: string; mime_type: string }>(
+      `SELECT ai.id, ai.uri, ai.asset_id, ai.filename, ai.mime_type
+       FROM asset_images ai
+       JOIN assets a ON a.id = ai.asset_id
+       WHERE a.user_id = ?`,
+      [userId],
+    );
+
+    const imageBlobs: Record<string, string> = {};
+    for (const img of imageRows) {
+      try {
+        if (img.uri && img.uri.startsWith('file://')) {
+          const b64 = await FileSystem.readAsStringAsync(img.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          imageBlobs[img.id] = b64;
+        }
+      } catch { /* file may have been deleted — skip gracefully */ }
+    }
+    payload['asset_images_meta'] = imageRows;
+    payload['asset_images_data'] = [imageBlobs]; // single object keyed by image id
 
     // 2. Encrypt the payload
     const key = await deriveEncryptionKey(masterPassword, userId);
@@ -143,6 +167,14 @@ export async function importBackup(masterPassword: string): Promise<BackupResult
       return { ok: false, message: 'Not a valid FinVault backup file.' };
     }
 
+    // Forward-compatibility guard: reject backups from a newer app version
+    if (typeof outer.version === 'number' && outer.version > BACKUP_VERSION) {
+      return {
+        ok: false,
+        message: `This backup was created with a newer version of FinVault (v${outer.version}). Please update the app to restore it.`,
+      };
+    }
+
     const backupUserId: string = outer.user_id;
     if (!backupUserId) return { ok: false, message: 'Backup file is missing user ID.' };
 
@@ -167,54 +199,104 @@ export async function importBackup(masterPassword: string): Promise<BackupResult
       return { ok: false, message: 'Wrong password or corrupted backup.' };
     }
 
-    // 4. Restore inside a single transaction
+    // 4. Restore inside a single transaction (with rollback on failure)
     const db = getDb();
-    db.withTransactionSync(() => {
-      // Delete existing data for this user (cascades handle child tables)
-      db.runSync('DELETE FROM users WHERE id = ?', [backupUserId]);
 
-      // Insert tables in dependency order
-      const insertOrder: (typeof USER_TABLES)[number][] = [
-        'users',
-        'user_preferences',
-        'household_members',
-        'expense_categories',
-        'assets',
-        'sip_schedules',
-        'expenses',
-        'income',
-        'loans',
-        'loan_payments',
-        'financial_goals',
-        'goal_asset_links',
-        'insurance_policies',
-        'vault_credential_categories',
-        'vault_credentials',
-        'notifications',
-        'networth_snapshots',
-        'history_events',
-      ];
+    // Insert tables in dependency order
+    const insertOrder: (typeof USER_TABLES)[number][] = [
+      'users',
+      'user_preferences',
+      'household_members',
+      'expense_categories',
+      'assets',
+      'sip_schedules',
+      'expenses',
+      'income',
+      'loans',
+      'loan_payments',
+      'financial_goals',
+      'goal_asset_links',
+      'insurance_policies',
+      'vault_credential_categories',
+      'vault_credentials',
+      'notifications',
+      'networth_snapshots',
+      'history_events',
+      'asset_images',
+    ];
 
+    // Snapshot existing data for rollback
+    let rollbackPayload: Record<string, unknown[]> = {};
+    try {
       for (const table of insertOrder) {
-        const rows = payload[table];
-        if (!Array.isArray(rows) || rows.length === 0) continue;
-        for (const row of rows) {
-          const r = row as Record<string, unknown>;
-          const keys = Object.keys(r);
-          const placeholders = keys.map(() => '?').join(', ');
-          const values = keys.map((k) => {
-            const v = r[k];
-            if (v === undefined || v === null) return null;
-            if (typeof v === 'boolean') return v ? 1 : 0;
-            return v;
-          });
-          db.runSync(
-            `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`,
-            values as any,
-          );
-        }
+        const col = table === 'users' ? 'id' : 'user_id';
+        rollbackPayload[table] = db.getAllSync(`SELECT * FROM ${table} WHERE ${col} = ?`, [backupUserId]);
       }
-    });
+    } catch { rollbackPayload = {}; }
+
+    try {
+      db.withTransactionSync(() => {
+        db.runSync('DELETE FROM users WHERE id = ?', [backupUserId]);
+
+        for (const table of insertOrder) {
+          const rows = payload[table];
+          if (!Array.isArray(rows) || rows.length === 0) continue;
+          for (const row of rows) {
+            const r = row as Record<string, unknown>;
+            const keys = Object.keys(r);
+            const placeholders = keys.map(() => '?').join(', ');
+            const values = keys.map((k) => {
+              const v = r[k];
+              if (v === undefined || v === null) return null;
+              if (typeof v === 'boolean') return v ? 1 : 0;
+              return v;
+            });
+            db.runSync(
+              `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`,
+              values as any,
+            );
+          }
+        }
+      });
+    } catch (restoreErr: any) {
+      // Attempt rollback
+      try {
+        db.withTransactionSync(() => {
+          db.runSync('DELETE FROM users WHERE id = ?', [backupUserId]);
+          for (const table of insertOrder) {
+            const rows = rollbackPayload[table];
+            if (!Array.isArray(rows) || !rows.length) continue;
+            for (const row of rows) {
+              const r = row as Record<string, unknown>;
+              const keys = Object.keys(r);
+              db.runSync(
+                `INSERT OR IGNORE INTO ${table} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`,
+                keys.map(k => r[k] ?? null) as any,
+              );
+            }
+          }
+        });
+      } catch { /* rollback failed — data integrity compromised */ }
+      return { ok: false, message: `Restore failed: ${restoreErr?.message ?? 'Unknown error'}. Previous data has been restored.` };
+    }
+
+    // Restore asset image files
+    const imageMeta = payload['asset_images_meta'] as any[] | undefined;
+    const imageData = (payload['asset_images_data']?.[0] ?? {}) as Record<string, string>;
+    if (Array.isArray(imageMeta)) {
+      const imgDir = `${FileSystem.documentDirectory}asset_images/`;
+      try { await FileSystem.makeDirectoryAsync(imgDir, { intermediates: true }); } catch {}
+      for (const img of imageMeta) {
+        const b64 = imageData[img.id];
+        if (!b64) continue;
+        const ext = img.filename?.split('.').pop() ?? 'jpg';
+        const newUri = `${imgDir}${img.id}.${ext}`;
+        try {
+          await FileSystem.writeAsStringAsync(newUri, b64, { encoding: FileSystem.EncodingType.Base64 });
+          db.runSync('UPDATE asset_images SET uri = ? WHERE id = ?', [newUri, img.id]);
+        } catch { /* skip failed images */ }
+      }
+    }
 
     return {
       ok: true,
