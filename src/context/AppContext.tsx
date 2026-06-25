@@ -21,6 +21,7 @@ import { hashPassword, verifyPassword } from '../utils/crypto';
 import { seedDemoData, seedInitialMetadata } from '../db/seed';
 import { fetchEquityPrice, fetchMutualFundNav, fetchGoldPrice } from '../api/assets/assetsApi';
 import { nowISO } from '../utils/date';
+import { scheduleSipReminders, setupNotificationChannel } from '../services/sipPushNotifications';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 type VaultLockMode = 'biometric' | 'password';
@@ -237,6 +238,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       refresh();
 
       if (seedDemo) setTimeout(() => syncPricesSilentlyInternal(newUid), 1000);
+      setTimeout(() => {
+        setupNotificationChannel().catch(() => {});
+        scheduleSipReminders(newUid).catch(() => {});
+      }, 2500);
       return true;
     } catch (err) {
       if (__DEV__) console.error('Sign up failed', err);
@@ -284,6 +289,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAuthenticated(true);
 
     setTimeout(() => syncPricesSilentlyInternal(userId), 1000);
+    setTimeout(() => {
+      setupNotificationChannel().catch(() => {});
+      scheduleSipReminders(userId).catch(() => {});
+    }, 2000);
     return true;
   };
 
@@ -306,6 +315,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAuthenticated(true);
 
     setTimeout(() => syncPricesSilentlyInternal(userId), 1000);
+    setTimeout(() => {
+      setupNotificationChannel().catch(() => {});
+      scheduleSipReminders(userId).catch(() => {});
+    }, 2000);
     return true;
   };
 

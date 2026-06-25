@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View } from 'react-native';
+import { Switch, View } from 'react-native';
 import { Button, Dialog, Divider, List, Menu, Portal, SegmentedButtons, Text, TextInput, useTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
 import { first, update, run } from '../db';
+import { scheduleSipReminders, cancelSipReminders } from '../services/sipPushNotifications';
 import type { User, UserPreferences } from '../models/types';
 import { Screen, SectionCard, Kpi, Row } from '../components/ui';
 import { formatINR, rupeesToPaise, paiseToRupees } from '../utils/money';
@@ -56,6 +57,16 @@ const SettingsScreen: React.FC = () => {
     refresh();
   };
 
+  const toggleSipPushReminders = (enabled: boolean) => {
+    run(`UPDATE user_preferences SET sip_reminders_enabled = ? WHERE user_id = ?`, [enabled ? 1 : 0, userId!]);
+    refresh();
+    if (enabled) {
+      scheduleSipReminders(userId!).catch(() => {});
+    } else {
+      cancelSipReminders().catch(() => {});
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -104,6 +115,18 @@ const SettingsScreen: React.FC = () => {
               />
             ))}
           </Menu>
+          <List.Item
+            title="SIP push notifications"
+            description="Remind me the day before each SIP is due"
+            left={(p) => <List.Icon {...p} icon="bell-badge" />}
+            right={() => (
+              <Switch
+                value={(prefs?.sip_reminders_enabled ?? 1) === 1}
+                onValueChange={toggleSipPushReminders}
+                trackColor={{ false: theme.colors.outlineVariant, true: theme.colors.primary }}
+              />
+            )}
+          />
           <Menu
             visible={lockMenu}
             onDismiss={() => setLockMenu(false)}
@@ -159,6 +182,16 @@ const SettingsScreen: React.FC = () => {
             left={(p) => <List.Icon {...p} icon="shield-lock-outline" />}
             right={(p) => <List.Icon {...p} icon="chevron-right" />}
             onPress={() => router.push('/backup' as any)}
+          />
+        </SectionCard>
+
+        <SectionCard title="Family" style={{ marginBottom: 12 }}>
+          <List.Item
+            title="Manage Family"
+            description="Link profiles, view combined net worth, switch accounts"
+            left={(p) => <List.Icon {...p} icon="account-group" />}
+            right={(p) => <List.Icon {...p} icon="chevron-right" />}
+            onPress={() => router.push('/family' as any)}
           />
         </SectionCard>
 

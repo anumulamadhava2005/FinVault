@@ -9,6 +9,7 @@ import { all, first, run, newId } from '../db';
 import type { Asset } from '../models/types';
 import { netWorth } from './finance';
 import { nowISO } from '../utils/date';
+import { fyStartYear, fyStartYm, fyEndYm, fyLabel, ymToFyStartYear } from '../utils/financialYear';
 
 interface Snapshot {
   ym: string;
@@ -46,21 +47,23 @@ const MILESTONES: { paise: number; label: string }[] = [
 ];
 
 export const availableSnapshotYears = (userId: string): number[] => {
-  const rows = all<{ y: string }>(
-    `SELECT DISTINCT SUBSTR(ym, 1, 4) AS y FROM networth_snapshots WHERE user_id = ? ORDER BY y DESC`,
+  const rows = all<{ ym: string }>(
+    `SELECT DISTINCT ym FROM networth_snapshots WHERE user_id = ? ORDER BY ym DESC`,
     [userId],
   );
-  const years = rows.map((r) => Number(r.y)).filter((n) => !isNaN(n));
-  const current = new Date().getFullYear();
-  if (!years.includes(current)) years.unshift(current);
-  return years;
+  const fyYears = new Set<number>();
+  for (const { ym } of rows) fyYears.add(ymToFyStartYear(ym));
+  const current = fyStartYear();
+  fyYears.add(current);
+  return [...fyYears].sort((a, b) => b - a);
 };
 
-export const wealthRecap = (userId: string, year: number) => {
+export const wealthRecap = (userId: string, fyYear: number) => {
+  // fyYear is the FY start year: e.g. 2025 → Apr 2025 – Mar 2026
   const rows = all<Snapshot>(
     `SELECT ym, net_worth, total_assets, total_liabilities FROM networth_snapshots
-     WHERE user_id = ? AND ym LIKE ? ORDER BY ym`,
-    [userId, `${year}-%`],
+     WHERE user_id = ? AND ym >= ? AND ym <= ? ORDER BY ym`,
+    [userId, fyStartYm(fyYear), fyEndYm(fyYear)],
   );
 
   const series = rows.map((r) => ({
@@ -108,7 +111,8 @@ export const wealthRecap = (userId: string, year: number) => {
   const milestones = MILESTONES.filter((m) => start < m.paise && end >= m.paise).map((m) => m.label);
 
   return {
-    year,
+    year: fyYear,
+    fy_label: fyLabel(fyYear),
     months_tracked: rows.length,
     series,
     start,

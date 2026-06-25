@@ -20,10 +20,15 @@ import {
   incomeExpenseSeries,
   netWorth,
   portfolioSummary,
+  sipStreak,
+  spendingForecast,
   spendingInsights,
   upcomingSips,
 } from '../services/finance';
 import { generateAllNotifications } from '../services/notificationService';
+import SipStreakCard from '../components/SipStreakCard';
+import SpendingForecastCard from '../components/SpendingForecastCard';
+import { scheduleSipReminders } from '../services/sipPushNotifications';
 import { captureNetWorthSnapshot } from '../services/wealthRecap';
 import { refreshMarketData } from '../services/marketFeeds';
 import { runLifecycleSweeps } from '../services/lifecycle';
@@ -153,6 +158,8 @@ const DashboardScreen: React.FC = () => {
   const goals = useData(() => goalsProgress(userId!));
   const upcoming = useData(() => upcomingSips(userId!));
   const insights = useData(() => spendingInsights(userId!));
+  const streakData = useData(() => userId ? sipStreak(userId) : []);
+  const forecastData = useData(() => userId ? spendingForecast(userId) : []);
   const movers = useData(() => todayMovers(userId!));
   const holdings = useData(() => marketHoldings(userId!));
 
@@ -277,10 +284,17 @@ const DashboardScreen: React.FC = () => {
         `UPDATE sip_schedules SET next_due_date = ? WHERE id = ?`,
         [nextDueDateStr, sip.id]
       );
+
+      // E. Record SIP payment for streak tracking
+      db.runSync(
+        `INSERT INTO sip_payments (id, user_id, asset_id, scheduled_date, actual_date, amount, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'paid', ?)`,
+        [newId(), userId!, sip.asset_id, sip.next_due_date, localISODate(new Date()), sip.amount, new Date().toISOString()]
+      );
     });
 
     Alert.alert('SIP Paid', `Logged payment of ${formatINR(sip.amount)} to ${sip.asset_name}. Valuation updated.`);
     refresh();
+    scheduleSipReminders(userId!).catch(() => {});
   };
 
   const handleSkipSip = (sip: any) => {
@@ -295,10 +309,15 @@ const DashboardScreen: React.FC = () => {
 
     tx((db) => {
       db.runSync('UPDATE sip_schedules SET next_due_date = ? WHERE id = ?', [nextDueDateStr, sip.id]);
+      db.runSync(
+        `INSERT INTO sip_payments (id, user_id, asset_id, scheduled_date, actual_date, amount, status, created_at) VALUES (?, ?, ?, ?, NULL, ?, 'skipped', ?)`,
+        [newId(), userId!, sip.asset_id, sip.next_due_date, sip.amount, new Date().toISOString()]
+      );
     });
 
     Alert.alert('SIP Skipped', `Skipped ${sip.asset_name}. Next due is ${formatSIPDueDate(nextDueDateStr)}.`);
     refresh();
+    scheduleSipReminders(userId!).catch(() => {});
   };
 
   const insets = useSafeAreaInsets();
@@ -681,6 +700,13 @@ const DashboardScreen: React.FC = () => {
           </CollapsibleCard>
         </Animated.View>
 
+        {/* Spending Forecast */}
+        {forecastData.length > 0 && (
+          <Animated.View style={getAnimatedStyle(9)}>
+            <SpendingForecastCard data={forecastData} />
+          </Animated.View>
+        )}
+
         {/* 5. Income vs Expense (6 mo) Chart (Collapsible) */}
         <Animated.View style={getAnimatedStyle(5)}>
           <CollapsibleCard
@@ -798,6 +824,16 @@ const DashboardScreen: React.FC = () => {
             )}
           </SectionCard>
         </Animated.View>
+
+        {/* SIP Streak */}
+        {streakData.length > 0 && (
+          <Animated.View style={getAnimatedStyle(9)}>
+            <SipStreakCard
+              data={streakData}
+              streakMonths={streakData.filter((d) => d.paid > 0).length}
+            />
+          </Animated.View>
+        )}
 
         {/* 7. Asset Allocation Pie Chart (Collapsible) */}
         {pf.allocation.length > 0 && (

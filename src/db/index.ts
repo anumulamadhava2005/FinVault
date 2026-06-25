@@ -51,6 +51,24 @@ const MIGRATIONS: { version: number; sql: string; legacy?: boolean }[] = [
   { version: 20, legacy: true, sql: 'ALTER TABLE loans ADD COLUMN details_json TEXT' },
   { version: 21, legacy: true, sql: 'ALTER TABLE assets ADD COLUMN maturity_amount INTEGER' },
   // ── New tracked migrations go here (version 22+) ──────────────────────────
+  { version: 22, sql: `CREATE TABLE IF NOT EXISTS sip_payments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  scheduled_date TEXT NOT NULL,
+  actual_date TEXT,
+  amount INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'paid',
+  created_at TEXT NOT NULL
+)` },
+  { version: 23, sql: `CREATE TABLE IF NOT EXISTS family_relationships (
+  id TEXT PRIMARY KEY,
+  primary_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  member_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  relationship TEXT NOT NULL DEFAULT 'Family',
+  created_at TEXT NOT NULL,
+  UNIQUE(primary_user_id, member_user_id)
+)` },
 ];
 
 // Idempotent data fixes that run on every startup to correct existing databases.
@@ -68,6 +86,8 @@ const DATA_FIXES = [
   // 5. Ensure NPS and Bank Account asset types exist (fixed ids → idempotent).
   `INSERT OR IGNORE INTO asset_types (id, name, slug, sort_order) VALUES ('type_nps', 'NPS', 'nps', 8)`,
   `INSERT OR IGNORE INTO asset_types (id, name, slug, sort_order) VALUES ('type_savings', 'Bank Account', 'savings', 9)`,
+  // 6. Add sip_reminders_enabled preference column (idempotent — try/catch already wraps all fixes)
+  `ALTER TABLE user_preferences ADD COLUMN sip_reminders_enabled INTEGER NOT NULL DEFAULT 1`,
 ];
 
 const nowIso = () => new Date().toISOString();

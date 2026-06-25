@@ -25,6 +25,7 @@ import { categoryBreakdown, incomeExpenseSeries, expenseAnalytics, generateSpend
 import { generateExpenseNotifications } from '../services/notificationService';
 import { chartColors, palette } from '../theme';
 import { formatDisplayDate, localISODate, parseISO, todayISO } from '../utils/date';
+import { fyStartYear, fyLabel } from '../utils/financialYear';
 import { formatINR, formatINRCompact, rupeesToPaise } from '../utils/money';
 
 const getMimeType = (filename: string): string => {
@@ -50,12 +51,12 @@ const ExpensesScreen: React.FC = () => {
 
   // Filters toolbar states
   const [trendType, setTrendType] = useState<'monthly' | 'yearly'>('monthly');
-  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedYear, setSelectedYear] = useState<number>(fyStartYear(now));
   const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
 
   const [trendMenu, setTrendMenu] = useState(false);
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
-  const [tempYear, setTempYear] = useState<number>(now.getFullYear());
+  const [tempYear, setTempYear] = useState<number>(fyStartYear(now));
   const [budgetSettingsOpen, setBudgetSettingsOpen] = useState(false);
   const [editBudgets, setEditBudgets] = useState<Record<string, string>>({});
 
@@ -590,7 +591,7 @@ const ExpensesScreen: React.FC = () => {
             contentStyle={{ flexDirection: 'row-reverse', height: 36 }}
             labelStyle={{ fontSize: 11, fontWeight: '700' }}
           >
-            {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][selectedMonth - 1]} {selectedYear}
+            {trendType === 'yearly' ? fyLabel(selectedYear) : `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][selectedMonth - 1]} ${selectedYear}`}
           </Button>
 
           <Menu
@@ -1446,7 +1447,7 @@ const ExpensesScreen: React.FC = () => {
                 onPress={() => setTempYear((y) => y - 1)}
               />
               <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
-                {tempYear}
+                {trendType === 'yearly' ? fyLabel(tempYear) : String(tempYear)}
               </Text>
               <IconButton
                 icon="chevron-right"
@@ -1454,44 +1455,58 @@ const ExpensesScreen: React.FC = () => {
               />
             </View>
 
-            {/* Months 3x4 Grid */}
-            <View style={{ flexWrap: 'wrap', flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
-              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((mName, i) => {
-                const isSelected = selectedMonth === i + 1 && selectedYear === tempYear;
-                return (
-                  <View key={i} style={{ width: '22%' }}>
-                    <BouncePressable
-                      onPress={() => {
-                        setSelectedMonth(i + 1);
-                        setSelectedYear(tempYear);
-                        setPeriodPickerOpen(false);
-                        refresh();
-                      }}
-                    >
-                      <Button
-                        mode={isSelected ? 'contained' : 'outlined'}
-                        compact
-                        style={{
-                          borderRadius: 8,
-                          height: 38,
-                          justifyContent: 'center',
-                          borderColor: isSelected ? 'transparent' : theme.colors.outline,
+            {/* Months 3x4 Grid — hidden in yearly mode */}
+            {trendType === 'monthly' && (
+              <View style={{ flexWrap: 'wrap', flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
+                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((mName, i) => {
+                  const isSelected = selectedMonth === i + 1 && selectedYear === tempYear;
+                  return (
+                    <View key={i} style={{ width: '22%' }}>
+                      <BouncePressable
+                        onPress={() => {
+                          setSelectedMonth(i + 1);
+                          setSelectedYear(tempYear);
+                          setPeriodPickerOpen(false);
+                          refresh();
                         }}
-                        labelStyle={{ fontSize: 11, fontWeight: '700' }}
-                        pointerEvents="none"
                       >
-                        {mName}
-                      </Button>
-                    </BouncePressable>
-                  </View>
-                );
-              })}
-            </View>
+                        <Button
+                          mode={isSelected ? 'contained' : 'outlined'}
+                          compact
+                          style={{
+                            borderRadius: 8,
+                            height: 38,
+                            justifyContent: 'center',
+                            borderColor: isSelected ? 'transparent' : theme.colors.outline,
+                          }}
+                          labelStyle={{ fontSize: 11, fontWeight: '700' }}
+                          pointerEvents="none"
+                        >
+                          {mName}
+                        </Button>
+                      </BouncePressable>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </Dialog.Content>
-          <Dialog.Actions>
-            <BouncePressable onPress={() => setPeriodPickerOpen(false)} style={{ width: 100 }}>
+          <Dialog.Actions style={{ gap: 8 }}>
+            <BouncePressable onPress={() => setPeriodPickerOpen(false)} style={{ flex: 1 }}>
               <Button mode="outlined" style={{ borderRadius: theme.roundness, width: '100%' }} pointerEvents="none">Cancel</Button>
             </BouncePressable>
+            {trendType === 'yearly' && (
+              <BouncePressable
+                onPress={() => {
+                  setSelectedYear(tempYear);
+                  setPeriodPickerOpen(false);
+                  refresh();
+                }}
+                style={{ flex: 1 }}
+              >
+                <Button mode="contained" style={{ borderRadius: theme.roundness, width: '100%' }} pointerEvents="none">Select</Button>
+              </BouncePressable>
+            )}
           </Dialog.Actions>
         </Dialog>
 

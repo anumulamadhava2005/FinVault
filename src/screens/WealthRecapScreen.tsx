@@ -14,6 +14,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
 import { captureNetWorthSnapshot, wealthRecap, availableSnapshotYears } from '../services/wealthRecap';
+import { fyStartYear, fyLabel } from '../utils/financialYear';
 import { palette } from '../theme';
 import { formatINR, formatINRCompact, paiseToRupees } from '../utils/money';
 
@@ -21,7 +22,7 @@ const WealthRecapScreen: React.FC = () => {
   const { userId } = useApp();
   const theme = useTheme();
   const navigation = useNavigation();
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState(fyStartYear());
   const [yearMenu, setYearMenu] = useState(false);
 
   useLayoutEffect(() => {
@@ -53,12 +54,12 @@ const WealthRecapScreen: React.FC = () => {
           onDismiss={() => setYearMenu(false)}
           anchor={
             <Button mode="outlined" compact icon="calendar" onPress={() => setYearMenu(true)} style={{ borderRadius: theme.roundness }}>
-              {String(year)}
+              {fyLabel(year)}
             </Button>
           }
         >
           {years.map((y) => (
-            <Menu.Item key={y} title={String(y)} onPress={() => { setYear(y); setYearMenu(false); }} />
+            <Menu.Item key={y} title={fyLabel(y)} onPress={() => { setYear(y); setYearMenu(false); }} />
           ))}
         </Menu>
       </View>
@@ -66,7 +67,7 @@ const WealthRecapScreen: React.FC = () => {
       {/* Headline */}
       <SectionCard>
         <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', letterSpacing: 0.5 }}>
-          NET WORTH · {year}
+          NET WORTH · {fyLabel(year)}
         </Text>
         <Text variant="displaySmall" style={{ fontWeight: '900', color: theme.colors.onSurface, marginTop: 2 }}>
           {formatINR(recap.end)}
@@ -75,7 +76,7 @@ const WealthRecapScreen: React.FC = () => {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
             <MaterialCommunityIcons name={positive ? 'arrow-up-bold' : 'arrow-down-bold'} size={16} color={growthColor} />
             <Text variant="bodyMedium" style={{ color: growthColor, fontWeight: '700' }}>
-              {positive ? '+' : ''}{formatINR(recap.growth)} ({positive ? '+' : ''}{recap.growth_pct}%) this year
+              {positive ? '+' : ''}{formatINR(recap.growth)} ({positive ? '+' : ''}{recap.growth_pct}%) this FY
             </Text>
           </View>
         ) : (

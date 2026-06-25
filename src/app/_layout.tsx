@@ -16,6 +16,7 @@ import { first } from '@/db';
 import BouncePressable from '@/components/BouncePressable';
 import ThemeToggle from '@/components/ThemeToggle';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { requestNotificationPermission, setupNotificationChannel } from '@/services/sipPushNotifications';
 
 const paperIconSettings = {
   icon: (props: any) => <MaterialCommunityIcons {...props} />,
@@ -56,6 +57,7 @@ const CustomDrawer = (props: any) => {
     { section: 'FINANCES', route: 'loans', label: 'Loans', icon: 'bank' },
     { section: 'FINANCES', route: 'goals', label: 'Goals', icon: 'flag-checkered' },
     { section: 'FINANCES', route: 'recap', label: 'Wealth Recap', icon: 'calendar-star' },
+    { section: 'FINANCES', route: 'wrapped', label: 'Monthly Recap', icon: 'chart-timeline-variant' },
     { section: 'FINANCES', route: 'history', label: 'History', icon: 'history' },
     { section: 'FINANCES', route: 'retirement', label: 'Retirement', icon: 'island' },
     { section: 'FINANCES', route: 'reports', label: 'Reports', icon: 'file-chart' },
@@ -248,6 +250,7 @@ const CustomDrawer = (props: any) => {
           {renderMenuItem('loans', 'Loans', 'bank')}
           {renderMenuItem('goals', 'Goals', 'flag-checkered')}
           {renderMenuItem('recap', 'Wealth Recap', 'calendar-star')}
+          {renderMenuItem('wrapped', 'Monthly Recap', 'chart-timeline-variant')}
           {renderMenuItem('history', 'History', 'history')}
           {renderMenuItem('retirement', 'Retirement', 'island')}
           {renderMenuItem('reports', 'Reports', 'file-chart')}
@@ -449,6 +452,10 @@ const SignupScreen: React.FC = () => {
       );
       if (success && passwordHint.trim()) {
         await AsyncStorage.setItem(`@finvault_pw_hint_${name.trim()}`, passwordHint.trim());
+      }
+      if (success) {
+        setupNotificationChannel().catch(() => {});
+        requestNotificationPermission().catch(() => {});
       }
       setLoading(false);
       if (!success) {
@@ -1167,6 +1174,7 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="vault" options={{ title: 'Vault', drawerIcon: drawerIcon('lock') }} />
         <Drawer.Screen name="reports" options={{ title: 'Reports', drawerIcon: drawerIcon('file-chart') }} />
         <Drawer.Screen name="recap" options={{ title: 'Wealth Recap', drawerIcon: drawerIcon('calendar-star') }} />
+        <Drawer.Screen name="wrapped" options={{ title: 'Monthly Recap', drawerIcon: drawerIcon('chart-timeline-variant') }} />
         <Drawer.Screen name="history" options={{ title: 'History', drawerIcon: drawerIcon('history') }} />
         <Drawer.Screen name="daily-movement" options={{ title: 'Daily Movement', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="news-impact" options={{ title: 'Impact Analysis', drawerItemStyle: { display: 'none' } }} />
@@ -1175,12 +1183,28 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="settings" options={{ title: 'Settings', drawerIcon: drawerIcon('cog') }} />
         <Drawer.Screen name="about" options={{ title: 'About FinVault', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="backup" options={{ title: 'Backup & Restore', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="family" options={{ title: 'Manage Family', drawerItemStyle: { display: 'none' } }} />
       </Drawer>
     </PaperProvider>
   );
 };
 
 export default function RootLayout() {
+  useEffect(() => {
+    if (!__DEV__) {
+      const prevHandler = ErrorUtils.getGlobalHandler();
+      ErrorUtils.setGlobalHandler(async (error: Error, isFatal?: boolean) => {
+        try {
+          const existing = await AsyncStorage.getItem('crash_log');
+          const logs: any[] = existing ? JSON.parse(existing) : [];
+          logs.unshift({ message: error.message, stack: error.stack?.slice(0, 500), isFatal, ts: new Date().toISOString() });
+          await AsyncStorage.setItem('crash_log', JSON.stringify(logs.slice(0, 10)));
+        } catch { /* ignore */ }
+        prevHandler(error, isFatal);
+      });
+    }
+  }, []);
+
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>

@@ -6,6 +6,7 @@ import { all, first } from '../db';
 import type { Asset, FinancialGoal, InsurancePolicy, Loan, VaultCredential } from '../models/types';
 import { diversification as portfolioDiversification } from './portfolioIntelligence';
 import { parseISO, daysBetween, monthsBetween, todayISO } from '../utils/date';
+import { fyStartYear, fyStartDate, fyEndDate, fyMonths, FY_MONTH_LABELS, fyLabel } from '../utils/financialYear';
 import { pct } from '../utils/money';
 import {
   BENCH_CLASS,
@@ -435,9 +436,9 @@ const getMonthBounds = (year: number, month: number) => {
   return { start: s, end: e };
 };
 
-const _sumExpensesYear = (userId: string, year: number): number => {
-  const start = `${year}-01-01`;
-  const end = `${year}-12-31`;
+const _sumExpensesYear = (userId: string, fyYear: number): number => {
+  const start = fyStartDate(fyYear);
+  const end = fyEndDate(fyYear);
   const res = first<{ t: number }>(
     'SELECT COALESCE(SUM(amount), 0) AS t FROM expenses WHERE user_id = ? AND expense_date >= ? AND expense_date <= ?',
     [userId, start, end]
@@ -534,27 +535,33 @@ export const expenseAnalytics = (
   let days = 30;
 
   if (trendType === 'yearly') {
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    labels = monthNames;
-    values = Array.from({ length: 12 }, (_, idx) => _sumExpenses(userId, selYear, idx + 1));
+    // selYear is the FY start year (e.g. 2025 = FY 2025-26, April 2025 – March 2026)
+    const fyMos = fyMonths(selYear);
+    labels = [...FY_MONTH_LABELS];
+    values = fyMos.map(({ calYear, calMonth }) => _sumExpenses(userId, calYear, calMonth));
 
-    pStart = `${selYear}-01-01`;
-    pEnd = `${selYear}-12-31`;
-    prevStart = `${selYear - 1}-01-01`;
-    prevEnd = `${selYear - 1}-12-31`;
-    periodLabel = String(selYear);
-    prevLabel = String(selYear - 1);
+    pStart = fyStartDate(selYear);
+    pEnd = fyEndDate(selYear);
+    prevStart = fyStartDate(selYear - 1);
+    prevEnd = fyEndDate(selYear - 1);
+    periodLabel = fyLabel(selYear);
+    prevLabel = fyLabel(selYear - 1);
+    days = 365;
 
-    const isLeap = (selYear % 4 === 0 && selYear % 100 !== 0) || selYear % 400 === 0;
-    days = isLeap ? 366 : 365;
-
-    // Do not show data for future months of the current year
-    if (selYear > currentYear) {
+    // Determine current FY and clip future months
+    const currentFy = fyStartYear(t);
+    if (selYear > currentFy) {
       labels = [''];
       values = [0];
-    } else if (selYear === currentYear) {
-      labels = labels.slice(0, currentMonth);
-      values = values.slice(0, currentMonth);
+    } else if (selYear === currentFy) {
+      // Find how many FY months have started (i.e. their calYear-calMonth <= today)
+      const nowYm = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+      const elapsed = fyMos.filter(
+        ({ calYear, calMonth }) =>
+          `${calYear}-${String(calMonth).padStart(2, '0')}` <= nowYm,
+      ).length;
+      labels = labels.slice(0, elapsed);
+      values = values.slice(0, elapsed);
     }
   } else {
     const { start, end } = getMonthBounds(selYear, selMonth);
@@ -857,4 +864,181 @@ export const spendingInsights = (userId: string): SpendingInsightsResult => {
   };
 };
 
+// --- SIP Streak ---------------------------------------------------------
+
+export interface SipStreakMonth {
+  ym: string;
+  paid: number;
+  total: number;
+}
+
+export const sipStreak = (userId: string): SipStreakMonth[] => {
+  const rows = all<{ ym: string; paid: number; total: number }>(
+    `SELECT STRFTIME('%Y-%m', scheduled_date) AS ym,
+            SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid,
+            COUNT(*) AS total
+     FROM sip_payments
+     WHERE user_id = ?
+       AND scheduled_date >= DATE('now', '-12 months')
+     GROUP BY ym
+     ORDER BY ym ASC`,
+    [userId],
+  );
+  return rows;
+};
+
+// --- Spending Forecast ---------------------------------------------------
+
+export interface ForecastRow {
+  category: string;
+  spent_so_far: number;
+  projected_total: number;
+  budget: number;
+  days_elapsed: number;
+  days_in_month: number;
+  status: 'on_track' | 'over_budget' | 'no_budget';
+}
+
+export const spendingForecast = (userId: string): ForecastRow[] => {
+  const t = today();
+  const cy = t.getFullYear();
+  const cm = t.getMonth() + 1;
+  const daysElapsed = t.getDate();
+  const daysInMonth = new Date(cy, cm, 0).getDate();
+  if (daysElapsed < 5) return [];
+
+  const monthStr = String(cm).padStart(2, '0');
+  const prefix = `${cy}-${monthStr}`;
+
+  const cats = all<{ id: string; name: string; budget_amount: number }>(
+    `SELECT id, name, COALESCE(budget_amount, 0) AS budget_amount
+     FROM expense_categories
+     WHERE (user_id = ? OR (is_system = 1 AND user_id IS NULL))
+     ORDER BY sort_order ASC`,
+    [userId],
+  );
+
+  const totals = all<{ category_id: string; total: number }>(
+    `SELECT category_id, SUM(amount) AS total
+     FROM expenses
+     WHERE user_id = ? AND expense_date LIKE ?
+     GROUP BY category_id`,
+    [userId, `${prefix}%`],
+  );
+  const totalMap = new Map(totals.map((r) => [r.category_id, r.total]));
+
+  return cats
+    .map((c): ForecastRow => {
+      const spent = totalMap.get(c.id) ?? 0;
+      if (spent === 0) return null as any;
+      const dailyRate = spent / daysElapsed;
+      const projected = Math.round(dailyRate * daysInMonth);
+      const budget = c.budget_amount;
+      const status: ForecastRow['status'] =
+        budget === 0 ? 'no_budget' : projected <= budget * 1.1 ? 'on_track' : 'over_budget';
+      return { category: c.name, spent_so_far: spent, projected_total: projected, budget, days_elapsed: daysElapsed, days_in_month: daysInMonth, status };
+    })
+    .filter(Boolean)
+    .filter((r) => r.status !== 'no_budget' || r.spent_so_far > 0);
+};
+
+// --- Monthly Wrapped ----------------------------------------------------
+
+export interface MonthlyWrappedResult {
+  year: number;
+  month: number;
+  net_worth_delta: number;
+  net_worth_delta_pct: number;
+  top_spend_category: string;
+  top_spend_amount: number;
+  best_asset_name: string;
+  best_asset_return_pct: number;
+  sip_paid: number;
+  sip_total: number;
+  goals_on_track: number;
+  total_goals: number;
+  savings_rate: number;
+  income_total: number;
+  expense_total: number;
+}
+
+export const monthlyWrapped = (userId: string, year: number, month: number): MonthlyWrappedResult | null => {
+  const monthStr = String(month).padStart(2, '0');
+  const prefix = `${year}-${monthStr}`;
+
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+  const prevYm = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+
+  const curSnap = first<{ net_worth: number }>(
+    `SELECT net_worth FROM networth_snapshots WHERE user_id = ? AND ym = ?`,
+    [userId, `${year}-${monthStr}`],
+  );
+  const prevSnap = first<{ net_worth: number }>(
+    `SELECT net_worth FROM networth_snapshots WHERE user_id = ? AND ym = ?`,
+    [userId, prevYm],
+  );
+
+  const incomeRow = first<{ total: number }>(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM income WHERE user_id = ? AND income_date LIKE ?`,
+    [userId, `${prefix}%`],
+  );
+  const expenseRow = first<{ total: number }>(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id = ? AND expense_date LIKE ?`,
+    [userId, `${prefix}%`],
+  );
+
+  const incomeTotal = incomeRow?.total ?? 0;
+  const expenseTotal = expenseRow?.total ?? 0;
+
+  const topCat = first<{ name: string; total: number }>(
+    `SELECT ec.name, SUM(e.amount) AS total
+     FROM expenses e
+     JOIN expense_categories ec ON ec.id = e.category_id
+     WHERE e.user_id = ? AND e.expense_date LIKE ?
+     GROUP BY ec.id
+     ORDER BY total DESC
+     LIMIT 1`,
+    [userId, `${prefix}%`],
+  );
+
+  const bestAsset = first<{ name: string; pnl_pct: number }>(
+    `SELECT name, CAST((current_value - invested_amount) AS REAL) / NULLIF(invested_amount, 0) * 100 AS pnl_pct
+     FROM assets WHERE user_id = ? AND invested_amount > 0
+     ORDER BY pnl_pct DESC LIMIT 1`,
+    [userId],
+  );
+
+  const sipRow = first<{ paid: number; total: number }>(
+    `SELECT SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid, COUNT(*) AS total
+     FROM sip_payments WHERE user_id = ? AND scheduled_date LIKE ?`,
+    [userId, `${prefix}%`],
+  );
+
+  const gp = goalsProgress(userId);
+
+  const curNw = curSnap?.net_worth ?? 0;
+  const prevNw = prevSnap?.net_worth ?? 0;
+  const delta = curNw - prevNw;
+  const deltaPct = prevNw !== 0 ? (delta / Math.abs(prevNw)) * 100 : 0;
+  const savingsRate = incomeTotal > 0 ? ((incomeTotal - expenseTotal) / incomeTotal) * 100 : 0;
+
+  return {
+    year,
+    month,
+    net_worth_delta: delta,
+    net_worth_delta_pct: Math.round(deltaPct * 10) / 10,
+    top_spend_category: topCat?.name ?? 'N/A',
+    top_spend_amount: topCat?.total ?? 0,
+    best_asset_name: bestAsset?.name ?? 'N/A',
+    best_asset_return_pct: Math.round((bestAsset?.pnl_pct ?? 0) * 10) / 10,
+    sip_paid: sipRow?.paid ?? 0,
+    sip_total: sipRow?.total ?? 0,
+    goals_on_track: gp.goals.filter((g) => g.status === 'on_track' || g.status === 'completed').length,
+    total_goals: gp.goals.length,
+    savings_rate: Math.round(savingsRate * 10) / 10,
+    income_total: incomeTotal,
+    expense_total: expenseTotal,
+  };
+};
 
