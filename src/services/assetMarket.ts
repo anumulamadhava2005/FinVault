@@ -85,6 +85,24 @@ export const modeledMonthly = (asset: Asset): { labels: string[]; values: number
   return { labels, values };
 };
 
+// ─── Gold purity ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns the purity multiplier (0..1) for a gold asset relative to 24K.
+ * Reads `purity` (karats) from details_json; falls back to parsing "22K" / "24K"
+ * from the asset name; defaults to 1.0 (24K pure) when not determinable.
+ */
+const goldPurityFactor = (asset: AssetRow): number => {
+  if (asset.slug === 'digital_gold') return 1.0; // digital gold is always 24K
+  try {
+    const dj = asset.details_json ? JSON.parse(asset.details_json) : null;
+    if (dj?.purity && typeof dj.purity === 'number') return Math.min(dj.purity, 24) / 24;
+  } catch { /* ignore */ }
+  const m = asset.name.match(/\b(\d{2})K\b/i);
+  if (m) return Math.min(Number(m[1]), 24) / 24;
+  return 1.0;
+};
+
 // ─── Fetch + cache ───────────────────────────────────────────────────────────
 
 const cacheKey = (id: string) => `asset:${id}`;
@@ -96,6 +114,7 @@ const writeCache = (m: AssetMarket) => {
 };
 
 async function fetchOne(asset: AssetRow, fx: number): Promise<AssetMarket> {
+  console.log(`[fetch] Asset market data for: "${asset.name}" (${asset.slug}, id=${asset.id})`);
   const qty = asset.quantity || 0;
   const modeledResult = (): AssetMarket => ({
     asset_id: asset.id,
@@ -152,14 +171,34 @@ async function fetchOne(asset: AssetRow, fx: number): Promise<AssetMarket> {
       const mfTimer = setTimeout(() => mfCtrl.abort(), 10_000);
       try {
         if (!code) {
-          const sres = await fetch(`https://api.mfapi.in/mf/search?q=${encodeURIComponent(asset.name)}`, { signal: mfCtrl.signal });
+          const mfSearchUrl = `https://api.mfapi.in/mf/search?q=${encodeURIComponent(asset.name)}`;
+          console.log(`[fetch] MF search: ${mfSearchUrl}`);
+          const sres = await fetch(mfSearchUrl, { signal: mfCtrl.signal });
           if (sres.ok) {
             const list: { schemeCode: number }[] = await sres.json();
             code = list?.[0]?.schemeCode;
           }
+          // Retry with simplified name if first search returned nothing.
+          if (!code) {
+            const simplified = asset.name
+              .replace(/\b(fund|direct|growth|regular|plan|option|idcw|dividend|bonus)\b\.?/gi, '')
+              .replace(/\s{2,}/g, ' ')
+              .trim();
+            if (simplified && simplified !== asset.name) {
+              const retryUrl = `https://api.mfapi.in/mf/search?q=${encodeURIComponent(simplified)}`;
+              console.log(`[fetch] MF search retry: ${retryUrl}`);
+              const sres2 = await fetch(retryUrl, { signal: mfCtrl.signal });
+              if (sres2.ok) {
+                const list2: { schemeCode: number }[] = await sres2.json();
+                code = list2?.[0]?.schemeCode;
+              }
+            }
+          }
         }
         if (code && qty > 0) {
-          const nres = await fetch(`https://api.mfapi.in/mf/${code}`, { signal: mfCtrl.signal });
+          const mfNavUrl = `https://api.mfapi.in/mf/${code}`;
+          console.log(`[fetch] MF NAV: ${mfNavUrl}`);
+          const nres = await fetch(mfNavUrl, { signal: mfCtrl.signal });
           if (nres.ok) {
             const nj: any = await nres.json();
             const data: { date: string; nav: string }[] = nj?.data ?? [];
@@ -191,25 +230,29 @@ async function fetchOne(asset: AssetRow, fx: number): Promise<AssetMarket> {
       }
     } else if (asset.slug === 'digital_gold' || asset.slug === 'physical_gold') {
       // qty is in grams. GOLDBEES (Nippon India Gold BeES) = 0.01 g/unit,
-      // so price × 100 = ₹/gram. NSE gives actual exchange previousClose
+      // so price × 100 = ₹/gram (24K equivalent). NSE gives actual exchange previousClose
       // (not Yahoo's dividend-adjusted historical series), fixing false +45% swings.
-      // Yahoo GOLDBEES.NS 1y series is fetched only for the monthly chart closes.
+      // Physical gold (jewelry, coins) must be discounted by purity: 22K = 22/24, etc.
+      const purityFactor = goldPurityFactor(asset);
       const [goldbees, gld1y] = await Promise.all([
         nseQuote('GOLDBEES'),
         yahooDaily('GOLDBEES.NS'),
       ]);
       if (goldbees && qty > 0) {
-        const priceInr = goldbees.lastPrice * 100;
-        const prevInr = goldbees.previousClose * 100;
+        const priceInr = goldbees.lastPrice * 100 * purityFactor;
+        const prevInr = goldbees.previousClose * 100 * purityFactor;
         const closesInr = gld1y
-          ? gld1y.closes.map((c) => ({ label: c.label, value: c.value * 100 }))
+          ? gld1y.closes.map((c) => ({ label: c.label, value: c.value * 100 * purityFactor }))
           : [];
+        const sourceLabel = purityFactor < 1
+          ? `NSE · GOLDBEES (×${purityFactor.toFixed(4)} purity)`
+          : 'NSE · GOLDBEES';
         return {
           asset_id: asset.id,
           day_change_pct: Number(goldbees.pChange.toFixed(2)),
           day_change_value: Math.round(qty * (priceInr - prevInr) * 100),
           monthly: buildMonthly(closesInr, qty, priceInr),
-          source: 'NSE · GOLDBEES',
+          source: sourceLabel,
           modeled: false,
           updated_at: nowISO(),
         };
@@ -218,7 +261,7 @@ async function fetchOne(asset: AssetRow, fx: number): Promise<AssetMarket> {
       // day-change % is accurate because USDINR cancels in the ratio).
       const d = await yahooDaily('GC=F');
       if (d && qty > 0) {
-        const toInrGram = (usdOz: number) => (usdOz / TROY_OZ_TO_GRAMS) * fx;
+        const toInrGram = (usdOz: number) => (usdOz / TROY_OZ_TO_GRAMS) * fx * purityFactor;
         const priceInr = toInrGram(d.price);
         const prevInr = toInrGram(d.prevClose);
         const closesInr = d.closes.map((c) => ({ label: c.label, value: toInrGram(c.value) }));

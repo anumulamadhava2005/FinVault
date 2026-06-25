@@ -115,8 +115,25 @@ export async function fetchMutualFundNav(
       const searchRes = await fetch(searchUrl, { signal: sig });
       if (!searchRes.ok) return { data: null, error: 'MF search failed' };
       const results: MfApiSearchResult[] = await searchRes.json();
-      if (!results.length) return { data: null, error: 'No matching fund found' };
-      code = results[0].schemeCode;
+      if (results.length) {
+        code = results[0].schemeCode;
+      } else {
+        // Retry with simplified name (strip plan/option suffixes that mfapi may not index).
+        const simplified = nameOrIsin
+          .replace(/\b(fund|direct|growth|regular|plan|option|idcw|dividend|bonus)\b\.?/gi, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        if (simplified && simplified !== nameOrIsin) {
+          const retryUrl = `https://api.mfapi.in/mf/search?q=${encodeURIComponent(simplified)}`;
+          console.log(`[fetch] MF search retry: ${retryUrl}`);
+          const retryRes = await fetch(retryUrl, { signal: sig });
+          if (retryRes.ok) {
+            const retryResults: MfApiSearchResult[] = await retryRes.json();
+            if (retryResults.length) code = retryResults[0].schemeCode;
+          }
+        }
+        if (!code) return { data: null, error: 'No matching fund found' };
+      }
     }
 
     const navUrl = `https://api.mfapi.in/mf/${code}`;

@@ -103,7 +103,8 @@ export const seedDemoData = (db: SQLiteDatabase, userId: string, masterPassword?
     db.runSync('DELETE FROM vault_credential_categories WHERE user_id = ?', [userId]);
     db.runSync('DELETE FROM notifications WHERE user_id = ?', [userId]);
 
-    // extra can override purchase_date/investment_date for unique per-asset dates
+    // extra can override purchase_date/investment_date for unique per-asset dates.
+    // price_per_unit in extra must be the avg BUY price (invested / qty), not the current price.
     const A = (type: string, name: string, invested: number, current: number, qty = 0, extra: Record<string, unknown> = {}) => {
       const id = uid();
       ins('assets', {
@@ -117,20 +118,21 @@ export const seedDemoData = (db: SQLiteDatabase, userId: string, masterPassword?
     };
 
     // ── EQUITIES — Large Cap ──────────────────────────────────────────────
-    A('equity','TCS',229200,257400,60,{ ticker:'TCS.NS', isin:'INE467B01029', price_per_unit:4290, purchase_date:'2024-04-02', investment_date:'2024-04-02' });
-    const aHdfcBank = A('equity','HDFC Bank',215250,267000,150,{ ticker:'HDFCBANK.NS', isin:'INE040A01034', price_per_unit:1780, purchase_date:'2024-04-05', investment_date:'2024-04-05' });
-    A('equity','Infosys',149000,168000,100,{ ticker:'INFY.NS', isin:'INE009A01021', price_per_unit:1680, purchase_date:'2024-04-09', investment_date:'2024-04-09' });
-    A('equity','Reliance Industries',202650,222600,70,{ ticker:'RELIANCE.NS', isin:'INE002A01018', price_per_unit:3180, purchase_date:'2024-04-15', investment_date:'2024-04-15' });
+    // price_per_unit = avg buy price = invested / qty
+    A('equity','TCS',229200,257400,60,{ ticker:'TCS.NS', isin:'INE467B01029', price_per_unit:3820, purchase_date:'2024-04-02', investment_date:'2024-04-02' });
+    const aHdfcBank = A('equity','HDFC Bank',215250,267000,150,{ ticker:'HDFCBANK.NS', isin:'INE040A01034', price_per_unit:1435, purchase_date:'2024-04-05', investment_date:'2024-04-05' });
+    A('equity','Infosys',149000,168000,100,{ ticker:'INFY.NS', isin:'INE009A01021', price_per_unit:1490, purchase_date:'2024-04-09', investment_date:'2024-04-09' });
+    A('equity','Reliance Industries',202650,222600,70,{ ticker:'RELIANCE.NS', isin:'INE002A01018', price_per_unit:2895, purchase_date:'2024-04-15', investment_date:'2024-04-15' });
 
     // ── EQUITIES — Mid Cap ────────────────────────────────────────────────
-    A('equity','Pidilite Industries',122400,146250,45,{ ticker:'PIDILITIND.NS', isin:'INE318A01026', price_per_unit:3250, purchase_date:'2024-05-03', investment_date:'2024-05-03' });
-    A('equity','Titan Company',115150,134400,35,{ ticker:'TITAN.NS', isin:'INE280A01028', price_per_unit:3840, purchase_date:'2024-05-10', investment_date:'2024-05-10' });
-    A('equity','Bajaj Finance',143600,168400,20,{ ticker:'BAJFINANCE.NS', isin:'INE296A01024', price_per_unit:8420, purchase_date:'2024-05-20', investment_date:'2024-05-20' });
-    A('equity','Tata Power',118500,147000,300,{ ticker:'TATAPOWER.NS', isin:'INE245A01021', price_per_unit:490, purchase_date:'2025-04-04', investment_date:'2025-04-04' });
+    A('equity','Pidilite Industries',122400,146250,45,{ ticker:'PIDILITIND.NS', isin:'INE318A01026', price_per_unit:2720, purchase_date:'2024-05-03', investment_date:'2024-05-03' });
+    A('equity','Titan Company',115150,134400,35,{ ticker:'TITAN.NS', isin:'INE280A01028', price_per_unit:3290, purchase_date:'2024-05-10', investment_date:'2024-05-10' });
+    A('equity','Bajaj Finance',143600,168400,20,{ ticker:'BAJFINANCE.NS', isin:'INE296A01024', price_per_unit:7180, purchase_date:'2024-05-20', investment_date:'2024-05-20' });
+    A('equity','Tata Power',118500,147000,300,{ ticker:'TATAPOWER.NS', isin:'INE245A01021', price_per_unit:395, purchase_date:'2025-04-04', investment_date:'2025-04-04' });
 
     // ── EQUITIES — Small Cap ──────────────────────────────────────────────
-    A('equity','Kaynes Technology',69600,102400,20,{ ticker:'KAYNES.NS', isin:'INE918Z01016', price_per_unit:5120, purchase_date:'2024-06-01', investment_date:'2024-06-01' });
-    A('equity','Narayana Hrudalaya',71000,99000,50,{ ticker:'NH.NS', isin:'INE410P01011', price_per_unit:1980, purchase_date:'2024-06-10', investment_date:'2024-06-10' });
+    A('equity','Kaynes Technology',69600,102400,20,{ ticker:'KAYNES.NS', isin:'INE918Z01016', price_per_unit:3480, purchase_date:'2024-06-01', investment_date:'2024-06-01' });
+    A('equity','Narayana Hrudalaya',71000,99000,50,{ ticker:'NH.NS', isin:'INE410P01011', price_per_unit:1420, purchase_date:'2024-06-10', investment_date:'2024-06-10' });
 
     // ── MUTUAL FUNDS ──────────────────────────────────────────────────────
     const aAxisBlue = A('mutual_fund','Axis Bluechip Fund - Direct Growth',46920,58183,850,{
@@ -154,20 +156,22 @@ export const seedDemoData = (db: SQLiteDatabase, userId: string, masterPassword?
     });
 
     // ── DIGITAL GOLD ──────────────────────────────────────────────────────
+    // price_per_unit = avg buy price per gram = invested / qty
     const aSbiGold = A('digital_gold','SBI Gold ETF',102750,124800,15,{
-      ticker:'GOLDBEES.NS', price_per_unit:8320, purchase_date:'2024-04-22', investment_date:'2024-04-22',
+      ticker:'GOLDBEES.NS', price_per_unit:6850, purchase_date:'2024-04-22', investment_date:'2024-04-22',
     });
     A('digital_gold','Nippon Gold BeES',56800,66560,8,{
-      ticker:'GOLDBEES.NS', price_per_unit:8320, purchase_date:'2025-04-14', investment_date:'2025-04-14',
+      ticker:'GOLDBEES.NS', price_per_unit:7100, purchase_date:'2025-04-14', investment_date:'2025-04-14',
     });
 
     // ── PHYSICAL GOLD ─────────────────────────────────────────────────────
+    // purity stored as number (karats) so goldPurityFactor() can read it directly
     A('physical_gold','22K Gold Jewelry',261900,342000,45,{
-      details_json:JSON.stringify({ purity:'22K', type:'jewelry' }),
+      details_json:JSON.stringify({ purity:22, type:'jewelry' }),
       purchase_date:'2024-04-29', investment_date:'2024-04-29',
     });
     A('physical_gold','24K Gold Coins',610000,780000,100,{
-      details_json:JSON.stringify({ purity:'24K', type:'coins' }),
+      details_json:JSON.stringify({ purity:24, type:'coins' }),
       purchase_date:'2024-08-15', investment_date:'2024-08-15',
     });
 
@@ -189,14 +193,15 @@ export const seedDemoData = (db: SQLiteDatabase, userId: string, masterPassword?
     });
 
     // ── SOVEREIGN GOLD BONDS ──────────────────────────────────────────────
+    // price_per_unit = issue price paid per gram (buy price, not current redemption value)
     A('sgb','SGB 2024-25 Series I',125260,162000,20,{
       isin:'IN0020240028', maturity_date:'2032-06-03', guaranteed_return_pct:2.5,
-      price_per_unit:8100, details_json:JSON.stringify({ coupon_rate:2.5 }),
+      price_per_unit:6263, details_json:JSON.stringify({ coupon_rate:2.5 }),
       purchase_date:'2024-06-03', investment_date:'2024-06-03',
     });
     A('sgb','SGB 2025-26 Series II',72180,81000,10,{
       isin:'IN0020250042', maturity_date:'2033-09-22', guaranteed_return_pct:2.5,
-      price_per_unit:8100, details_json:JSON.stringify({ coupon_rate:2.5 }),
+      price_per_unit:7218, details_json:JSON.stringify({ coupon_rate:2.5 }),
       purchase_date:'2025-09-22', investment_date:'2025-09-22',
     });
 

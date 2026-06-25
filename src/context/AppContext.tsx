@@ -26,6 +26,18 @@ import { scheduleSipReminders, setupNotificationChannel } from '../services/sipP
 type ThemeMode = 'light' | 'dark' | 'system';
 type VaultLockMode = 'biometric' | 'password';
 
+/** Purity multiplier (0..1) for physical gold assets relative to 24K pure. */
+const goldPurityFactor = (asset: { name: string; details_json: string | null; slug: string }): number => {
+  if (asset.slug !== 'physical_gold') return 1.0;
+  try {
+    const dj = asset.details_json ? JSON.parse(asset.details_json) : null;
+    if (dj?.purity && typeof dj.purity === 'number') return Math.min(dj.purity, 24) / 24;
+  } catch { /* ignore */ }
+  const m = asset.name.match(/\b(\d{2})K\b/i);
+  if (m) return Math.min(Number(m[1]), 24) / 24;
+  return 1.0;
+};
+
 // SecureStore keys are limited to alphanumeric + . _ -
 const secureKey = (userId: string) => `finvault_pw_${userId.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
@@ -435,9 +447,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               else goldFetchFailed = true;
             }
             if (goldPricePerGram && asset.quantity) {
+              // Apply purity discount for physical gold (22K jewelry, coins, etc.)
+              const purityFactor = asset.slug === 'physical_gold' ? goldPurityFactor(asset) : 1.0;
+              const effectivePrice = goldPricePerGram * purityFactor;
               update('assets', asset.id, {
-                current_value: Math.round(goldPricePerGram * asset.quantity * 100),
-                price_per_unit: goldPricePerGram,
+                current_value: Math.round(effectivePrice * asset.quantity * 100),
+                price_per_unit: effectivePrice,
                 last_price_updated_at: timestamp,
               });
             }

@@ -409,7 +409,7 @@ const DashboardScreen: React.FC = () => {
                 {movers.gainers.length === 0 ? (
                   <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>—</Text>
                 ) : movers.gainers.map((m) => (
-                  <Pressable key={m.id} onPress={() => router.push(`/assets/${m.id}/analysis` as any)} style={{ paddingVertical: 4 }}>
+                  <Pressable key={m.id} onPress={() => (navigation as any).navigate('assets', { screen: '[id]/analysis', params: { id: m.id } })} style={{ paddingVertical: 4 }}>
                     <Text variant="bodySmall" numberOfLines={1} style={{ fontWeight: '600', color: theme.colors.onSurface }}>{m.name}</Text>
                     <Text variant="labelSmall" style={{ color: palette.good, fontWeight: '800' }}>+{m.pct}% today</Text>
                     <Text variant="labelSmall" style={{ color: palette.good, fontWeight: '500' }}>+{formatINRCompact(m.change)}</Text>
@@ -421,7 +421,7 @@ const DashboardScreen: React.FC = () => {
                 {movers.losers.length === 0 ? (
                   <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>—</Text>
                 ) : movers.losers.map((m) => (
-                  <Pressable key={m.id} onPress={() => router.push(`/assets/${m.id}/analysis` as any)} style={{ paddingVertical: 4 }}>
+                  <Pressable key={m.id} onPress={() => (navigation as any).navigate('assets', { screen: '[id]/analysis', params: { id: m.id } })} style={{ paddingVertical: 4 }}>
                     <Text variant="bodySmall" numberOfLines={1} style={{ fontWeight: '600', color: theme.colors.onSurface }}>{m.name}</Text>
                     <Text variant="labelSmall" style={{ color: palette.danger, fontWeight: '800' }}>{m.pct}% today</Text>
                     <Text variant="labelSmall" style={{ color: palette.danger, fontWeight: '500' }}>{formatINRCompact(m.change)}</Text>
@@ -445,7 +445,7 @@ const DashboardScreen: React.FC = () => {
               return (
                 <Pressable
                   key={h.id}
-                  onPress={() => router.push(`/assets/${h.id}/analysis` as any)}
+                  onPress={() => (navigation as any).navigate('assets', { screen: '[id]/analysis', params: { id: h.id } })}
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
                     borderTopWidth: i === 0 ? 0 : 1, borderTopColor: theme.colors.outlineVariant,

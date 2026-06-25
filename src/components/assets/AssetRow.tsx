@@ -37,6 +37,15 @@ const getShortName = (name: string): string => {
   return map[name] ?? name;
 };
 
+// Slugs that have meaningful per-unit pricing to display
+const PRICED_SLUGS = new Set(['equity', 'mutual_fund', 'digital_gold', 'physical_gold', 'sgb']);
+
+const fmtUnitPrice = (v: number): string => {
+  if (v >= 1000) return `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  if (v >= 10)   return `₹${v.toFixed(2)}`;
+  return `₹${v.toFixed(4)}`;
+};
+
 const AssetRow: React.FC<AssetRowProps> = React.memo(({
   asset: a,
   onEdit,
@@ -54,6 +63,23 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
   const pnlPercent = pct(pnl, a.invested_amount);
   const cagr = calcCAGR(a.current_value, a.invested_amount, a.investment_date ?? a.purchase_date);
   const cfg = getTypeConfig(a.slug ?? '');
+
+  const qty = a.quantity ?? 0;
+  const showPriceTags = !selectMode && PRICED_SLUGS.has(a.slug) && qty > 0;
+
+  // LTP: current price per unit in INR
+  const ltp: number | null = showPriceTags
+    ? (a.slug === 'mutual_fund' && a.current_nav != null
+        ? a.current_nav
+        : (a.current_value / 100) / qty)
+    : null;
+
+  // Avg buy price per unit in INR
+  const avgBuy: number | null = showPriceTags
+    ? (a.slug === 'mutual_fund'
+        ? (a.invested_amount / 100) / qty
+        : (a.price_per_unit ?? (a.invested_amount / 100) / qty))
+    : null;
 
   const handleCardPress = () => {
     if (selectMode) {
@@ -134,6 +160,34 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
                 <Text variant="labelSmall" style={{ fontSize: 11, color: perf.color, fontWeight: '600' }}>
                   {perf.label}
                 </Text>
+              </View>
+            )}
+
+            {/* LTP + Avg buy price tags */}
+            {showPriceTags && ltp !== null && (
+              <View style={{ flexDirection: 'row', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                <View style={{
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 4,
+                  backgroundColor: theme.colors.surfaceVariant,
+                }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: theme.colors.onSurfaceVariant }}>
+                    LTP {fmtUnitPrice(ltp)}
+                  </Text>
+                </View>
+                {avgBuy !== null && (
+                  <View style={{
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 4,
+                    backgroundColor: theme.colors.surfaceVariant,
+                  }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: theme.colors.onSurfaceVariant }}>
+                      Avg {fmtUnitPrice(avgBuy)}
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
           </View>

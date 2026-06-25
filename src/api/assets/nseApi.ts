@@ -70,8 +70,10 @@ export async function nseQuote(
 ): Promise<NseQuoteResult | null> {
   try {
     await ensureSession(signal);
+    const nseUrl = `${NSE_BASE}/api/quote-equity?symbol=${encodeURIComponent(symbol.toUpperCase())}`;
+    console.log(`[fetch] NSE quote: ${nseUrl}`);
     const resp = await fetch(
-      `${NSE_BASE}/api/quote-equity?symbol=${encodeURIComponent(symbol.toUpperCase())}`,
+      nseUrl,
       {
         headers: {
           'User-Agent': UA,
