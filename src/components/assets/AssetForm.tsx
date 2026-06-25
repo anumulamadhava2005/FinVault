@@ -254,7 +254,6 @@ const AssetForm: React.FC<AssetFormProps> = ({
       setForm((f) => {
         const next = { ...f, quantity: parsed };
         if (parsed > 0) {
-          // Invested amount calculation
           if (f.price_per_unit !== null && f.price_per_unit > 0) {
             const calculatedInvested = Math.round(parsed * f.price_per_unit * 100);
             next.invested_amount = calculatedInvested;
@@ -264,12 +263,17 @@ const AssetForm: React.FC<AssetFormProps> = ({
             next.invested_amount = calculatedInvested;
             setInvestedAmountText(String(calculatedInvested / 100));
           }
-          // Current value calculation
-          const currentPrice = f.current_nav !== null && f.current_nav > 0 ? f.current_nav : (f.price_per_unit !== null && f.price_per_unit > 0 ? f.price_per_unit : null);
-          if (currentPrice !== null) {
-            const calculatedCurrent = Math.round(parsed * currentPrice * 100);
-            next.current_value = calculatedCurrent;
-            setCurrentValueText(String(calculatedCurrent / 100));
+          // Only auto-fill current_value on Add (not Edit — editing existing assets
+          // have a live-refreshed current_value that must not be overwritten)
+          if (!readOnlyIdentity) {
+            const currentPrice = f.current_nav !== null && f.current_nav > 0
+              ? f.current_nav
+              : (f.price_per_unit !== null && f.price_per_unit > 0 ? f.price_per_unit : null);
+            if (currentPrice !== null) {
+              const calculatedCurrent = Math.round(parsed * currentPrice * 100);
+              next.current_value = calculatedCurrent;
+              setCurrentValueText(String(calculatedCurrent / 100));
+            }
           }
         }
         return next;
@@ -290,7 +294,8 @@ const AssetForm: React.FC<AssetFormProps> = ({
           next.invested_amount = calculatedInvested;
           setInvestedAmountText(String(calculatedInvested / 100));
 
-          if (f.current_nav === null || f.current_nav === 0) {
+          // Only auto-fill current_value on Add (not Edit)
+          if (!readOnlyIdentity && (f.current_nav === null || f.current_nav === 0)) {
             const calculatedCurrent = Math.round(f.quantity * parsed * 100);
             next.current_value = calculatedCurrent;
             setCurrentValueText(String(calculatedCurrent / 100));

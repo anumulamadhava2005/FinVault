@@ -16,7 +16,12 @@ const goldPurityFactor = (asset: { name: string; details_json?: string | null; s
   if (asset.slug !== 'physical_gold') return 1.0;
   try {
     const dj = asset.details_json ? JSON.parse(asset.details_json) : null;
-    if (dj?.purity && typeof dj.purity === 'number') return Math.min(dj.purity, 24) / 24;
+    if (dj?.purity != null) {
+      if (typeof dj.purity === 'number') return Math.min(dj.purity, 24) / 24;
+      // String format from form: '24K', '22K', '18K', '14K' or just '24', '22'
+      const m = String(dj.purity).match(/^(\d+)/);
+      if (m) return Math.min(Number(m[1]), 24) / 24;
+    }
   } catch { /* ignore */ }
   const m = asset.name.match(/\b(\d{2})K\b/i);
   if (m) return Math.min(Number(m[1]), 24) / 24;
@@ -69,7 +74,6 @@ export const useRefreshPrices = (userId: string, onDone?: () => void) => {
             const newValue = Math.round(res.data.price * asset.quantity * 100);
             update('assets', asset.id, {
               current_value: newValue,
-              price_per_unit: res.data.price,
               last_price_updated_at: timestamp,
             });
             updated++;
@@ -126,7 +130,6 @@ export const useRefreshPrices = (userId: string, onDone?: () => void) => {
             const newValue = Math.round(effectivePrice * asset.quantity * 100);
             update('assets', asset.id, {
               current_value: newValue,
-              price_per_unit: effectivePrice,
               last_price_updated_at: timestamp,
             });
             updated++;

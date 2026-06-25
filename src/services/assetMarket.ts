@@ -93,10 +93,15 @@ export const modeledMonthly = (asset: Asset): { labels: string[]; values: number
  * from the asset name; defaults to 1.0 (24K pure) when not determinable.
  */
 const goldPurityFactor = (asset: AssetRow): number => {
-  if (asset.slug === 'digital_gold') return 1.0; // digital gold is always 24K
+  if (asset.slug === 'digital_gold') return 1.0;
   try {
     const dj = asset.details_json ? JSON.parse(asset.details_json) : null;
-    if (dj?.purity && typeof dj.purity === 'number') return Math.min(dj.purity, 24) / 24;
+    if (dj?.purity != null) {
+      if (typeof dj.purity === 'number') return Math.min(dj.purity, 24) / 24;
+      // String format from form: '24K', '22K', '18K', '14K' or just '24', '22'
+      const m = String(dj.purity).match(/^(\d+)/);
+      if (m) return Math.min(Number(m[1]), 24) / 24;
+    }
   } catch { /* ignore */ }
   const m = asset.name.match(/\b(\d{2})K\b/i);
   if (m) return Math.min(Number(m[1]), 24) / 24;

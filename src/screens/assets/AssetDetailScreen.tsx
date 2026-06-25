@@ -233,9 +233,15 @@ const AssetDetailScreen: React.FC = () => {
   const isMaturityType = MATURITY_SLUGS.has(asset.slug);
 
   const openSell = () => {
+    // Pre-fill sell price with current LTP (market price), not the avg buy price.
+    const ltp = asset.quantity > 0
+      ? (asset.slug === 'mutual_fund' && asset.current_nav != null
+          ? asset.current_nav
+          : (asset.current_value / 100) / asset.quantity)
+      : null;
     setLc({
       ...blankLc,
-      price: asset.price_per_unit ? String(asset.price_per_unit) : '',
+      price: ltp != null ? ltp.toFixed(2) : '',
       saleValue: asset.current_value ? String(asset.current_value / 100) : '',
     });
     setLcMode('sell');

@@ -31,7 +31,12 @@ const goldPurityFactor = (asset: { name: string; details_json: string | null; sl
   if (asset.slug !== 'physical_gold') return 1.0;
   try {
     const dj = asset.details_json ? JSON.parse(asset.details_json) : null;
-    if (dj?.purity && typeof dj.purity === 'number') return Math.min(dj.purity, 24) / 24;
+    if (dj?.purity != null) {
+      if (typeof dj.purity === 'number') return Math.min(dj.purity, 24) / 24;
+      // String format from form: '24K', '22K', '18K', '14K' or just '24', '22'
+      const m = String(dj.purity).match(/^(\d+)/);
+      if (m) return Math.min(Number(m[1]), 24) / 24;
+    }
   } catch { /* ignore */ }
   const m = asset.name.match(/\b(\d{2})K\b/i);
   if (m) return Math.min(Number(m[1]), 24) / 24;
@@ -406,7 +411,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (res.data) {
               update('assets', asset.id, {
                 current_value: Math.round(res.data.price * asset.quantity * 100),
-                price_per_unit: res.data.price,
                 last_price_updated_at: timestamp,
               });
             }
@@ -447,12 +451,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               else goldFetchFailed = true;
             }
             if (goldPricePerGram && asset.quantity) {
-              // Apply purity discount for physical gold (22K jewelry, coins, etc.)
               const purityFactor = asset.slug === 'physical_gold' ? goldPurityFactor(asset) : 1.0;
               const effectivePrice = goldPricePerGram * purityFactor;
               update('assets', asset.id, {
                 current_value: Math.round(effectivePrice * asset.quantity * 100),
-                price_per_unit: effectivePrice,
                 last_price_updated_at: timestamp,
               });
             }
