@@ -11,6 +11,7 @@ import {
   TextInput,
   useTheme,
 } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApp } from '../context/AppContext';
 import { useData } from '../hooks/useData';
@@ -29,6 +30,7 @@ const blank = { name: '', goal_type: 'retirement', target: '', target_date: '', 
 const GoalsScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const progress = useData(() => goalsProgress(userId!));
   const assets = useData(() => all<Asset>('SELECT * FROM assets WHERE user_id = ? ORDER BY name', [userId!]));
 
@@ -133,7 +135,7 @@ const GoalsScreen: React.FC = () => {
         )}
       </Screen>
 
-      <FAB icon="plus" label="Add Goal" style={{ position: 'absolute', right: 16, bottom: 16 }} onPress={() => setAddOpen(true)} />
+      <FAB icon="plus" label="Add Goal" style={{ position: 'absolute', right: 16, bottom: Math.max(insets.bottom, 16) + 16 }} onPress={() => setAddOpen(true)} />
 
       <Portal>
         <Dialog visible={addOpen} onDismiss={() => setAddOpen(false)} style={{ maxHeight: '85%', borderRadius: theme.roundness }}>

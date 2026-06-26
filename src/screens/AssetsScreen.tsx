@@ -346,6 +346,78 @@ const AssetsScreen: React.FC = () => {
           </Row>
         </SectionCard>
 
+        {/* Passive Income Quick Link Card */}
+        <BouncePressable
+          onPress={() => router.push('/income' as any)}
+          style={{ marginBottom: 16, marginHorizontal: 18 }}
+        >
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: theme.colors.elevation.level1,
+            paddingVertical: 12,
+            paddingHorizontal: 16,
+            borderRadius: theme.roundness || 8,
+            borderWidth: 1,
+            borderColor: theme.colors.outlineVariant,
+            gap: 12
+          }}>
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: theme.colors.primaryContainer + '20',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <MaterialCommunityIcons name="cash" size={20} color={theme.colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text variant="labelMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
+                Dividend & Interest Tracker
+              </Text>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, marginTop: 1 }}>
+                Track received payouts and forecast upcoming passive income.
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+          </View>
+        </BouncePressable>
+
+        {/* Import Portfolio Actions */}
+        <Row gap={12} style={{ marginBottom: 16, marginHorizontal: 18 }}>
+          <Button
+            mode="outlined"
+            icon="file-upload-outline"
+            onPress={() => setImportOpen(true)}
+            style={{
+              flex: 1,
+              borderColor: theme.colors.outlineVariant,
+              borderRadius: theme.roundness || 8,
+              backgroundColor: theme.colors.surface,
+            }}
+            contentStyle={{ height: 40 }}
+            labelStyle={{ fontSize: 12, fontWeight: '700', color: theme.colors.primary }}
+          >
+            Import CSV
+          </Button>
+          <Button
+            mode="outlined"
+            icon="file-pdf-box"
+            onPress={() => router.push('/cas-import')}
+            style={{
+              flex: 1,
+              borderColor: theme.colors.outlineVariant,
+              borderRadius: theme.roundness || 8,
+              backgroundColor: theme.colors.surface,
+            }}
+            contentStyle={{ height: 40 }}
+            labelStyle={{ fontSize: 12, fontWeight: '700', color: theme.colors.primary }}
+          >
+            Import CAS PDF
+          </Button>
+        </Row>
+
         {/* Integrated Search and Sort trigger */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 18, marginTop: 4, gap: 8 }}>
           <Searchbar
@@ -479,7 +551,7 @@ const AssetsScreen: React.FC = () => {
         <View style={{ marginTop: 16, paddingHorizontal: 18 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text variant="titleMedium" style={{ fontWeight: '700' }}>Holdings</Text>
-            <Row gap={0} style={{ alignItems: 'center' }}>
+            <Row gap={8} style={{ alignItems: 'center' }}>
               <Button
                 compact
                 mode="text"
@@ -493,20 +565,15 @@ const AssetsScreen: React.FC = () => {
                 {selectMode ? 'Cancel' : 'Select'}
               </Button>
               {!selectMode && (
-                <>
-                  <Button compact mode="text" icon="file-upload-outline" onPress={() => setImportOpen(true)}>
-                    Import
-                  </Button>
-                  <Button
-                    mode="text"
-                    compact
-                    icon="refresh"
-                    loading={isRefreshing}
-                    onPress={handleRefreshPrices}
-                  >
-                    Refresh
-                  </Button>
-                </>
+                <Button
+                  mode="text"
+                  compact
+                  icon="refresh"
+                  loading={isRefreshing}
+                  onPress={handleRefreshPrices}
+                >
+                  Refresh
+                </Button>
               )}
             </Row>
           </View>
@@ -557,7 +624,7 @@ const AssetsScreen: React.FC = () => {
         style={{
           position: 'absolute',
           right: 16,
-          bottom: selectMode ? 80 : 16,
+          bottom: selectMode ? Math.max(insets.bottom, 16) + 80 : Math.max(insets.bottom, 16) + 16,
           zIndex: 10,
         }}
       >

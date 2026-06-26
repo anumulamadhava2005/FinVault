@@ -160,7 +160,12 @@ export const sellAsset = (userId: string, asset: AssetRow, p: SellParams): void 
     pnl,
     status,
     notes: p.notes ?? null,
-    details: { sale_value: saleValue, charges, qty_sold: p.qtyToSell ?? null },
+    details: { 
+      sale_value: saleValue, 
+      charges, 
+      qty_sold: p.qtyToSell ?? null,
+      purchase_date: asset.purchase_date || asset.investment_date || null
+    },
   });
 };
 
@@ -186,6 +191,9 @@ export const prematureClosure = (
     pnl,
     status: 'Prematurely Closed',
     notes: p.notes ?? null,
+    details: {
+      purchase_date: asset.purchase_date || asset.investment_date || null
+    },
   });
 };
 
@@ -217,6 +225,9 @@ export const processMaturities = (userId: string): number => {
       amount: maturityVal,
       pnl,
       status: 'Matured',
+      details: {
+        purchase_date: a.purchase_date || a.investment_date || null
+      },
     });
     n += 1;
   }

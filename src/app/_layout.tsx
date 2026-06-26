@@ -1148,6 +1148,7 @@ const Navigator: React.FC = () => {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Drawer
         drawerContent={(p) => <CustomDrawer {...p} />}
+        backBehavior="history"
         screenOptions={{
           headerStyle: { backgroundColor: theme.colors.surface },
           headerTintColor: theme.colors.onSurface,
@@ -1168,6 +1169,12 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="feed" options={{ title: 'Wealth Feed', drawerIcon: drawerIcon('newspaper-variant-outline') }} />
         <Drawer.Screen name="assets" options={{ title: 'Assets', drawerIcon: drawerIcon('chart-line'), headerShown: false }} />
         <Drawer.Screen name="expenses" options={{ title: 'Expenses', drawerIcon: drawerIcon('cash-multiple') }} />
+        <Drawer.Screen name="income" options={{ title: 'Passive Income', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="sector" options={{ title: 'Sector Overlap', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="expense-ratio" options={{ title: 'Fee Analyzer', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="debt-payoff" options={{ title: 'Debt Payoff Planner', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="subscriptions" options={{ title: 'Subscriptions', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="cas-import" options={{ title: 'Import CAS', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="loans" options={{ title: 'Loans', drawerIcon: drawerIcon('bank') }} />
         <Drawer.Screen name="protect" options={{ title: 'Protect', drawerIcon: drawerIcon('shield-check') }} />
         <Drawer.Screen name="goals" options={{ title: 'Goals', drawerIcon: drawerIcon('flag-checkered'), headerShown: false }} />
@@ -1175,6 +1182,7 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="reports" options={{ title: 'Reports', drawerIcon: drawerIcon('file-chart') }} />
         <Drawer.Screen name="recap" options={{ title: 'Wealth Recap', drawerIcon: drawerIcon('calendar-star') }} />
         <Drawer.Screen name="wrapped" options={{ title: 'Monthly Recap', drawerIcon: drawerIcon('chart-timeline-variant') }} />
+        <Drawer.Screen name="benchmark" options={{ title: 'Benchmark Audit', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="history" options={{ title: 'History', drawerIcon: drawerIcon('history') }} />
         <Drawer.Screen name="daily-movement" options={{ title: 'Daily Movement', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="news-impact" options={{ title: 'Impact Analysis', drawerItemStyle: { display: 'none' } }} />

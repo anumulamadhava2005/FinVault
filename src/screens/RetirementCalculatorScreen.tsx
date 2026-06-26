@@ -2,11 +2,11 @@
  * Interactive retirement calculator. Prefills current corpus + monthly SIP from
  * the live portfolio, then shows required corpus, projected savings and the gap.
  */
-import React, { useLayoutEffect, useMemo, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useLayoutEffect, useMemo, useState, useEffect } from 'react';
+import { View, StyleSheet, BackHandler, Pressable } from 'react-native';
 import { Text, TextInput, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 
 import { Screen, SectionCard, Kpi, Row, ProgressBar } from '../components/ui';
 import ThemeToggle from '../components/ThemeToggle';
@@ -27,12 +27,43 @@ const RetirementCalculatorScreen: React.FC = () => {
   const { userId } = useApp();
   const theme = useTheme();
   const navigation = useNavigation();
+  const router = useRouter();
 
+  // Hardware back press handler for Android
+  useEffect(() => {
+    const onBackPress = () => {
+      if (navigation.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/insights' as any);
+      }
+      return true; // prevent default behavior
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, router]);
+
+  // Configure navigation header
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Pressable
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/insights' as any);
+            }
+          }}
+          hitSlop={12}
+          style={{ paddingLeft: 16, paddingRight: 8, paddingVertical: 4 }}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.onSurface} />
+        </Pressable>
+      ),
       headerRight: () => <View style={{ marginRight: 4 }}><ThemeToggle color={theme.colors.onSurface} /></View>,
     });
-  }, [navigation, theme]);
+  }, [navigation, theme, router]);
 
   // Prefill from live data (once).
   const prefill = useMemo(() => {

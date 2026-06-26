@@ -285,4 +285,17 @@ CREATE TABLE IF NOT EXISTS history_events (
   details_json TEXT,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,           -- paise
+  billing_cycle TEXT NOT NULL DEFAULT 'monthly',-- monthly|yearly|quarterly
+  next_billing_date TEXT NOT NULL,             -- YYYY-MM-DD
+  category TEXT NOT NULL DEFAULT 'entertainment',-- entertainment|music|cloud|utilities|fitness|other
+  status TEXT NOT NULL DEFAULT 'active',       -- active|paused
+  notes TEXT,
+  created_at TEXT NOT NULL
+);
 `;

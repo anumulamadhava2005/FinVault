@@ -199,10 +199,29 @@ export const TrendLine: React.FC<{
   legend?: string[];
 }> = ({ labels, datasets, legend }) => {
   const theme = useTheme();
+
+  // Thin out X-axis labels to prevent overlapping on long timelines
+  const thinnedLabels = React.useMemo(() => {
+    if (labels.length <= 6) return labels;
+    const total = labels.length;
+    let step = 5;
+    if (total > 30) step = 10;
+    else if (total > 15) step = 5;
+    else step = 3;
+
+    return labels.map((label, index) => {
+      // Always show first and last labels, and any label at step intervals
+      if (index === 0 || index === total - 1 || index % step === 0) {
+        return label;
+      }
+      return '';
+    });
+  }, [labels]);
+
   return (
     <LineChart
       data={{
-        labels,
+        labels: thinnedLabels,
         datasets: datasets.map((d) => ({
           data: d.data,
           color: (opacity = 1) => hexToRgba(d.color, opacity),

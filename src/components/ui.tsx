@@ -86,7 +86,7 @@ export const SectionCard: React.FC<{
   return cardContent;
 };
 
-export const Kpi: React.FC<{ label: string; value: string; sub?: string; subTone?: 'good' | 'bad' | 'muted'; flex?: boolean }> = ({
+export const Kpi: React.FC<{ label: string; value: string; sub?: string; subTone?: 'good' | 'bad' | 'muted' | 'warn'; flex?: boolean }> = ({
   label,
   value,
   sub,
@@ -94,7 +94,16 @@ export const Kpi: React.FC<{ label: string; value: string; sub?: string; subTone
   flex = true,
 }) => {
   const theme = useTheme();
-  const subColor = subTone === 'good' ? palette.good : subTone === 'bad' ? palette.danger : theme.dark ? '#B3B3B3' : theme.colors.onSurfaceVariant;
+  const subColor =
+    subTone === 'good'
+      ? palette.good
+      : subTone === 'bad'
+      ? palette.danger
+      : subTone === 'warn'
+      ? palette.warn
+      : theme.dark
+      ? '#B3B3B3'
+      : theme.colors.onSurfaceVariant;
   return (
     <View
       style={[
@@ -240,8 +249,8 @@ export const LineItem: React.FC<{ label: string; value: string; valueColor?: str
   const theme = useTheme();
   return (
     <View style={styles.lineItem}>
-      <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13 }}>{label}</Text>
-      <Text style={{ fontWeight: '600', color: valueColor ?? theme.colors.onSurface, fontSize: 13, fontVariant: ['tabular-nums'] }}>{value}</Text>
+      <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, flex: 1, marginRight: 12 }} numberOfLines={2}>{label}</Text>
+      <Text style={{ fontWeight: '600', color: valueColor ?? theme.colors.onSurface, fontSize: 13, fontVariant: ['tabular-nums'], textAlign: 'right' }}>{value}</Text>
     </View>
   );
 };

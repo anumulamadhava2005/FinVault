@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { Button, Checkbox, Dialog, Portal, Text, TextInput, useTheme } from 'react-native-paper';
+import { Button, Checkbox, Dialog, Portal, Text, TextInput, useTheme, ActivityIndicator } from 'react-native-paper';
 import BouncePressable from '../../components/BouncePressable';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -29,6 +29,7 @@ import { formatINR, pct, assetPnl, rupeesToPaise } from '../../utils/money';
 import { formatDisplayDate, nowISO, todayISO } from '../../utils/date';
 import { calcCAGR } from '../../utils/cagr';
 import { palette } from '../../theme';
+import { getPerSipReturns, PerSipXirrItem } from '../../services/sipXirrService';
 
 interface GoalWithLink extends FinancialGoal {
   is_linked: number;
@@ -154,6 +155,38 @@ const AssetDetailScreen: React.FC = () => {
       return { asset: null, assetError: err?.message || 'Error loading asset' };
     }
   }, [id, refreshKey]);
+
+  const [sipReturns, setSipReturns] = useState<PerSipXirrItem[] | null>(null);
+  const [loadingSipReturns, setLoadingSipReturns] = useState(false);
+
+  React.useEffect(() => {
+    if (!asset || !(asset.slug === 'mutual_fund' || asset.slug === 'equity')) {
+      setSipReturns(null);
+      return;
+    }
+    let active = true;
+    const load = async () => {
+      setLoadingSipReturns(true);
+      try {
+        const res = await getPerSipReturns(asset, asset.slug);
+        if (active) setSipReturns(res);
+      } catch (err) {
+        console.warn('[sipDetail] Error loading Per-SIP returns:', err);
+      } finally {
+        if (active) setLoadingSipReturns(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, [asset, refreshKey]);
+
+  const formatSipMonth = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-');
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  };
 
   const allGoals = React.useMemo(() => {
     if (!id || !userId) return [];
@@ -664,6 +697,91 @@ const AssetDetailScreen: React.FC = () => {
               </Button>
             </View>
           )
+        )}
+
+        {/* Per-SIP Performance Card */}
+        {(asset.slug === 'mutual_fund' || asset.slug === 'equity') && (asset.is_sip || (sipReturns && sipReturns.length > 0)) && (
+          <SectionCard title="Per-SIP Performance" style={{ marginBottom: 12 }}>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>
+              Track the individual annualized return (CAGR) for each monthly installment purchase.
+            </Text>
+            
+            {loadingSipReturns ? (
+              <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+                <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 8 }}>
+                  Calculating installment returns...
+                </Text>
+              </View>
+            ) : sipReturns && sipReturns.length > 0 ? (
+              <View style={{ gap: 10 }}>
+                {/* Table Header */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 2 }}>
+                  <Text variant="labelSmall" style={{ fontWeight: '700', color: theme.colors.onSurfaceVariant, flex: 1.2 }}>Installment</Text>
+                  <Text variant="labelSmall" style={{ fontWeight: '700', color: theme.colors.onSurfaceVariant, flex: 1, textAlign: 'right' }}>Invested</Text>
+                  <Text variant="labelSmall" style={{ fontWeight: '700', color: theme.colors.onSurfaceVariant, flex: 1.2, textAlign: 'right' }}>Current Value</Text>
+                  <Text variant="labelSmall" style={{ fontWeight: '700', color: theme.colors.onSurfaceVariant, flex: 1, textAlign: 'right' }}>Return</Text>
+                </View>
+                <View style={{ height: 1, backgroundColor: theme.colors.outlineVariant, marginBottom: 4 }} />
+
+                {/* Table Rows */}
+                {sipReturns.map((item) => {
+                  const isPositive = item.cagr >= 0;
+                  return (
+                    <View key={item.id} style={{ gap: 8 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4 }}>
+                        {/* Month & Purchase Nav */}
+                        <View style={{ flex: 1.2 }}>
+                          <Text variant="bodyMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
+                            {formatSipMonth(item.paymentDate)}
+                          </Text>
+                          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 10, marginTop: 1 }}>
+                            Buy: ₹{item.purchaseNav.toFixed(2)}
+                          </Text>
+                        </View>
+
+                        {/* Invested Amount */}
+                        <Text variant="bodyMedium" style={{ flex: 1, textAlign: 'right', color: theme.colors.onSurface }}>
+                          {formatINR(item.amountPaid * 100)}
+                        </Text>
+
+                        {/* Current Value */}
+                        <View style={{ flex: 1.2, alignItems: 'flex-end' }}>
+                          <Text variant="bodyMedium" style={{ fontWeight: '600', color: theme.colors.onSurface }}>
+                            {formatINR(Math.round(item.currentValue * 100))}
+                          </Text>
+                          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 9.5, marginTop: 1 }}>
+                            {item.unitsBought.toFixed(2)} units
+                          </Text>
+                        </View>
+
+                        {/* Return % (XIRR/CAGR) */}
+                        <Text variant="bodyMedium" style={{
+                          flex: 1,
+                          textAlign: 'right',
+                          fontWeight: '800',
+                          color: isPositive ? palette.good : palette.danger
+                        }}>
+                          {isPositive ? '+' : ''}{item.cagr.toFixed(1)}%
+                        </Text>
+                      </View>
+                      <View style={{ height: 1, backgroundColor: theme.colors.outlineVariant, opacity: 0.3 }} />
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={{ paddingVertical: 16, alignItems: 'center', backgroundColor: theme.colors.surfaceVariant + '20', borderRadius: theme.roundness, paddingHorizontal: 16 }}>
+                <MaterialCommunityIcons name="history" size={24} color={theme.colors.onSurfaceVariant} style={{ opacity: 0.6, marginBottom: 6 }} />
+                <Text style={{ color: theme.colors.onSurface, fontSize: 13, fontWeight: '700', textAlign: 'center' }}>
+                  No Installment Data
+                </Text>
+                <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11.5, textAlign: 'center', marginTop: 4, lineHeight: 16 }}>
+                  Mark your scheduled SIP payments as paid on the Dashboard to track your individual installment returns and CAGR over time.
+                </Text>
+              </View>
+            )}
+          </SectionCard>
         )}
 
         {/* Linked Goals */}

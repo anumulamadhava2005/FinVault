@@ -39,6 +39,12 @@ import {
   passwordHealth,
   benchmarkComparison,
 } from '../services/finance';
+import { capitalGains } from '../services/taxService';
+import { getBenchmarkComparison } from '../services/benchmarkService';
+import { getPassiveIncomeSummary } from '../services/passiveIncomeService';
+import { getSectorOverlapAnalysis } from '../services/sectorService';
+import { simulatePayoff, getActiveLoans } from '../services/payoffService';
+import { getSubscriptions, getSubscriptionSummary, getUpcomingRenewals } from '../services/subscriptionService';
 import { chartColors, palette } from '../theme';
 import { todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
@@ -53,6 +59,13 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'health', label: 'Financial Health Audit' },
   { key: 'password', label: 'Password Health Audit' },
   { key: 'benchmark', label: 'Benchmark Allocation Audit' },
+  { key: 'benchmark_nifty', label: 'Benchmark vs Nifty Audit' },
+  { key: 'tax', label: 'Capital Gains Audit' },
+  { key: 'expense_ratio', label: 'Expense Ratio Analyzer' },
+  { key: 'debt_payoff', label: 'Debt Payoff Planner' },
+  { key: 'passive_income', label: 'Passive Income & Forecast' },
+  { key: 'sector', label: 'Sector Overlap Analysis' },
+  { key: 'subscriptions', label: 'Subscription Tracker' },
 ];
 
 // Base64 helper tables and encoders/decoders for Hermes/React Native compatibility
@@ -273,6 +286,121 @@ const makeTrendLineSvg = (expSeries: { labels: string[]; income: number[]; expen
 
   svg += `</svg>`;
   return svg;
+};
+
+const runCompounding = (
+  curVal: number,
+  sip: number,
+  returnRate: number,
+  ratioA: number,
+  ratioB: number,
+  years: number,
+) => {
+  const rateA = (returnRate - ratioA) / 100;
+  const rateB = (returnRate - ratioB) / 100;
+
+  const lumpA = curVal * Math.pow(1 + rateA, years);
+  const lumpB = curVal * Math.pow(1 + rateB, years);
+
+  let sipA = 0;
+  let sipB = 0;
+  if (sip > 0 && years > 0) {
+    const rMonthlyA = rateA / 12;
+    const rMonthlyB = rateB / 12;
+    const months = years * 12;
+
+    if (rMonthlyA > 0) {
+      sipA = sip * ((Math.pow(1 + rMonthlyA, months) - 1) / rMonthlyA) * (1 + rMonthlyA);
+    } else {
+      sipA = sip * months;
+    }
+
+    if (rMonthlyB > 0) {
+      sipB = sip * ((Math.pow(1 + rMonthlyB, months) - 1) / rMonthlyB) * (1 + rMonthlyB);
+    } else {
+      sipB = sip * months;
+    }
+  }
+
+  const finalA = Math.round(lumpA + sipA);
+  const finalB = Math.round(lumpB + sipB);
+  const savings = finalA - finalB;
+  const dragPct = finalA > 0 ? (savings / finalA) * 100 : 0;
+
+  return { finalA, finalB, savings, dragPct };
+};
+
+const getMockLoans = (userId: string): Loan[] => [
+  {
+    id: 'mock_home',
+    user_id: userId,
+    loan_type: 'home',
+    provider: 'SBI Home Finance',
+    account_number: 'XXXX-1234',
+    borrower_name: 'User',
+    original_amount: 400000000,
+    outstanding_amount: 400000000,
+    interest_rate: 8.5,
+    emi_amount: 3470000,
+    start_date: '2026-01-01',
+    end_date: '2046-01-01',
+    next_due_date: '2026-07-01',
+    prepayment_total: 0,
+    notes: 'Home Purchase',
+    status: 'active',
+    interest_type: 'floating',
+    details_json: null,
+    created_at: '2026-01-01',
+  },
+  {
+    id: 'mock_car',
+    user_id: userId,
+    loan_type: 'vehicle',
+    provider: 'HDFC Car Loans',
+    account_number: 'XXXX-5678',
+    borrower_name: 'User',
+    original_amount: 80000000,
+    outstanding_amount: 80000000,
+    interest_rate: 9.5,
+    emi_amount: 1500000,
+    start_date: '2026-01-01',
+    end_date: '2031-01-01',
+    next_due_date: '2026-07-01',
+    prepayment_total: 0,
+    notes: 'Family Car',
+    status: 'active',
+    interest_type: 'fixed',
+    details_json: null,
+    created_at: '2026-01-01',
+  },
+  {
+    id: 'mock_personal',
+    user_id: userId,
+    loan_type: 'personal',
+    provider: 'ICICI Bank',
+    account_number: 'XXXX-9012',
+    borrower_name: 'User',
+    original_amount: 30000000,
+    outstanding_amount: 30000000,
+    interest_rate: 12.0,
+    emi_amount: 1000000,
+    start_date: '2026-01-01',
+    end_date: '2029-01-01',
+    next_due_date: '2026-07-01',
+    prepayment_total: 0,
+    notes: 'Emergency Personal Expense',
+    status: 'active',
+    interest_type: 'fixed',
+    details_json: null,
+    created_at: '2026-01-01',
+  },
+];
+
+const getFutureMonthYear = (monthsAhead: number): string => {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const date = new Date(todayISO() + 'T00:00:00');
+  date.setMonth(date.getMonth() + monthsAhead);
+  return `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
 };
 
 /** Compiles HTML file containing report tables and charts. */
@@ -593,6 +721,86 @@ const buildHtmlReport = async (
     `;
   }
 
+  let benchmarkNiftyHtml = '';
+  if (selected.benchmark_nifty) {
+    const bn = getBenchmarkComparison(userId, 'nifty');
+    const pAll = bn.periods.find((p) => p.period === 'All') || bn.periods[2];
+    const p3Y = bn.periods.find((p) => p.period === '3Y') || bn.periods[1];
+    const p1Y = bn.periods.find((p) => p.period === '1Y') || bn.periods[0];
+    
+    const alphaTone = (val: number | null) => (val != null && val >= 0) ? '#10b981' : '#ef4444';
+    
+    benchmarkNiftyHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Benchmark vs Nifty Audit</div>
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Portfolio XIRR</div>
+            <div class="kpi-value">${pAll.portfolio_return != null ? `${pAll.portfolio_return}%` : '—'}</div>
+            <div class="kpi-sub">All-Time Annualized</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Nifty 50 Return</div>
+            <div class="kpi-value">${pAll.benchmark_return}%</div>
+            <div class="kpi-sub">Index All-Time Return</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #8b5cf6;">
+            <div class="kpi-label">Generated Alpha</div>
+            <div class="kpi-value" style="color: ${alphaTone(pAll.alpha)};">${pAll.alpha != null ? `${pAll.alpha > 0 ? '+' : ''}${pAll.alpha}%` : '—'}</div>
+            <div class="kpi-sub">${(pAll.alpha != null && pAll.alpha >= 0) ? 'Outperforming' : 'Underperforming'}</div>
+          </div>
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Horizon</th>
+              <th class="text-right">Portfolio Return</th>
+              <th class="text-right">Equity-Only Return</th>
+              <th class="text-right">Nifty 50 Return</th>
+              <th class="text-right">Portfolio Alpha</th>
+              <th class="text-right">Equity Alpha</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1 Year Horizon</strong></td>
+              <td class="text-right">${p1Y.portfolio_return != null ? `${p1Y.portfolio_return}%` : '—'}</td>
+              <td class="text-right">${p1Y.equity_return != null ? `${p1Y.equity_return}%` : '—'}</td>
+              <td class="text-right">${p1Y.benchmark_return}%</td>
+              <td class="text-right" style="color: ${alphaTone(p1Y.alpha)}; font-weight: bold;">${p1Y.alpha != null ? `${p1Y.alpha > 0 ? '+' : ''}${p1Y.alpha}%` : '—'}</td>
+              <td class="text-right" style="color: ${alphaTone(p1Y.equity_alpha)}; font-weight: bold;">${p1Y.equity_alpha != null ? `${p1Y.equity_alpha > 0 ? '+' : ''}${p1Y.equity_alpha}%` : '—'}</td>
+            </tr>
+            <tr>
+              <td><strong>3 Years Horizon</strong></td>
+              <td class="text-right">${p3Y.portfolio_return != null ? `${p3Y.portfolio_return}%` : '—'}</td>
+              <td class="text-right">${p3Y.equity_return != null ? `${p3Y.equity_return}%` : '—'}</td>
+              <td class="text-right">${p3Y.benchmark_return}%</td>
+              <td class="text-right" style="color: ${alphaTone(p3Y.alpha)}; font-weight: bold;">${p3Y.alpha != null ? `${p3Y.alpha > 0 ? '+' : ''}${p3Y.alpha}%` : '—'}</td>
+              <td class="text-right" style="color: ${alphaTone(p3Y.equity_alpha)}; font-weight: bold;">${p3Y.equity_alpha != null ? `${p3Y.equity_alpha > 0 ? '+' : ''}${p3Y.equity_alpha}%` : '—'}</td>
+            </tr>
+            <tr>
+              <td><strong>All Time Horizon</strong></td>
+              <td class="text-right">${pAll.portfolio_return != null ? `${pAll.portfolio_return}%` : '—'}</td>
+              <td class="text-right">${pAll.equity_return != null ? `${pAll.equity_return}%` : '—'}</td>
+              <td class="text-right">${pAll.benchmark_return}%</td>
+              <td class="text-right" style="color: ${alphaTone(pAll.alpha)}; font-weight: bold;">${pAll.alpha != null ? `${pAll.alpha > 0 ? '+' : ''}${pAll.alpha}%` : '—'}</td>
+              <td class="text-right" style="color: ${alphaTone(pAll.equity_alpha)}; font-weight: bold;">${pAll.equity_alpha != null ? `${pAll.equity_alpha > 0 ? '+' : ''}${pAll.equity_alpha}%` : '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <div style="margin-top: 15px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; background-color: #f9fafb; font-size: 11px; line-height: 16px;">
+          <strong>Market Comparison Insight:</strong> 
+          ${(pAll.alpha != null && pAll.alpha >= 0)
+            ? `Your portfolio is successfully outperforming the index with a positive alpha of <strong>${pAll.alpha}%</strong>. This demonstrates strong asset selection and effective risk balancing.`
+            : `Your portfolio is currently lagging the index by <strong>${Math.abs(pAll.alpha || 0)}%</strong>. Consider auditing your underperforming mutual funds or individual stock holdings to optimize returns.`
+          }
+        </div>
+      </div>
+    `;
+  }
+
   let loansHtml = '';
   if (selected.loans) {
     const loans = all<Loan>('SELECT * FROM loans WHERE user_id=?', [userId!]);
@@ -803,6 +1011,696 @@ const buildHtmlReport = async (
     `;
   }
 
+  let taxHtml = '';
+  if (selected.tax) {
+    const t = capitalGains(userId);
+    taxHtml = `
+      <div class="section">
+        <div class="section-title">Capital Gains Audit</div>
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Realized Capital Gains</div>
+            <div class="kpi-value" style="font-size: 14px; font-weight: 800; margin-top: 5px; line-height: 18px;">
+              STCG: ${formatINR(t.realized_stcg)}<br/>
+              LTCG: ${formatINR(t.realized_ltcg)}
+            </div>
+            <div class="kpi-sub" style="margin-top: 4px;">Total: <strong>${formatINR(t.realized_total)}</strong></div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Unrealized Capital Gains</div>
+            <div class="kpi-value" style="font-size: 14px; font-weight: 800; margin-top: 5px; line-height: 18px;">
+              STCG: ${formatINR(t.unrealized_stcg)}<br/>
+              LTCG: ${formatINR(t.unrealized_ltcg)}
+            </div>
+            <div class="kpi-sub" style="margin-top: 4px;">Total: <strong>${formatINR(t.unrealized_total)}</strong></div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #8b5cf6;">
+            <div class="kpi-label">Combined Gains</div>
+            <div class="kpi-value" style="font-size: 14px; font-weight: 800; margin-top: 5px; line-height: 18px;">
+              STCG: ${formatINR(t.stcg_total)}<br/>
+              LTCG: ${formatINR(t.ltcg_total)}
+            </div>
+            <div class="kpi-sub" style="margin-top: 4px;">Grand Total: <strong>${formatINR(t.grand_total)}</strong></div>
+          </div>
+        </div>
+
+        ${t.realized_rows.length > 0 ? `
+          <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 10px;">Realized Capital Gains (Taxable Sales)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Asset Name</th>
+                <th>Type</th>
+                <th>Purchase Date</th>
+                <th>Sale Date</th>
+                <th class="text-right">Holding Days</th>
+                <th class="text-right">Sale Value</th>
+                <th class="text-right">Gain / Loss</th>
+                <th>Tax Class</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${t.realized_rows.map(r => `
+                <tr>
+                  <td><strong>${r.name}</strong></td>
+                  <td>${r.type_name}</td>
+                  <td>${r.purchase_date}</td>
+                  <td>${r.sale_date}</td>
+                  <td class="text-right">${r.holding_period_days === -1 ? 'Unknown' : `${r.holding_period_days}d`}</td>
+                  <td class="text-right">${formatINR(r.sale_value)}</td>
+                  <td class="text-right" style="color: ${r.pnl >= 0 ? '#10b981' : '#ef4444'}; font-weight: 600;">${formatINR(r.pnl)}</td>
+                  <td><span class="badge badge-${r.is_long_term ? 'good' : 'warn'}">${r.is_long_term ? 'LTCG' : 'STCG'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+
+        ${t.unrealized_rows.length > 0 ? `
+          <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Unrealized Capital Gains (Active Holdings)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Asset Name</th>
+                <th>Type</th>
+                <th>Purchase Date</th>
+                <th class="text-right">Holding Days</th>
+                <th class="text-right">Invested</th>
+                <th class="text-right">Current Value</th>
+                <th class="text-right">Unrealized Gain</th>
+                <th>Tax Class</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${t.unrealized_rows.map(r => `
+                <tr>
+                  <td><strong>${r.name}</strong></td>
+                  <td>${r.type_name}</td>
+                  <td>${r.purchase_date}</td>
+                  <td class="text-right">${r.holding_period_days}d</td>
+                  <td class="text-right">${formatINR(r.invested_amount)}</td>
+                  <td class="text-right">${formatINR(r.current_value)}</td>
+                  <td class="text-right" style="color: ${r.unrealized_gain >= 0 ? '#10b981' : '#ef4444'}; font-weight: 600;">${formatINR(r.unrealized_gain)}</td>
+                  <td><span class="badge badge-${r.is_long_term ? 'good' : 'warn'}">${r.is_long_term ? 'LTCG' : 'STCG'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+        ${t.harvest_alert.alert_text ? `
+          <div style="margin-top: 15px; padding: 12px; border: 1px solid #a7f3d0; border-radius: 6px; background-color: #ecfdf5; color: #065f46; font-size: 11.5px; line-height: 17px; page-break-inside: avoid;">
+            <strong>Tax-Saving Recommendation:</strong> ${t.harvest_alert.alert_text}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  let expenseRatioHtml = '';
+  if (selected.expense_ratio) {
+    const mutualFunds = all<Asset>(
+      `SELECT a.* FROM assets a
+       JOIN asset_types t ON t.id = a.asset_type_id
+       WHERE a.user_id = ? AND t.slug = 'mutual_fund' AND a.current_value > 0`,
+      [userId!]
+    );
+
+    const mfs = mutualFunds.map((a) => {
+      let ter = 1.65;
+      try {
+        const details = a.details_json ? JSON.parse(a.details_json) : null;
+        if (details && details.expense_ratio != null && !isNaN(parseFloat(details.expense_ratio))) {
+          ter = parseFloat(details.expense_ratio);
+        }
+      } catch { /* ignore */ }
+      return { ...a, ter };
+    });
+
+    const totalMfValue = mfs.reduce((sum, f) => sum + f.current_value, 0) / 100;
+    const totalMfSip = mfs.reduce((sum, f) => sum + (f.is_sip ? f.sip_monthly_amount : 0), 0) / 100;
+    const isHypothetical = totalMfValue === 0;
+    const simCurVal = isHypothetical ? 500000 : totalMfValue;
+    const simSip = isHypothetical ? 15000 : totalMfSip;
+
+    const proj10 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 10);
+    const proj20 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 20);
+    const proj30 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 30);
+
+    const avgTer = mfs.length > 0
+      ? mfs.reduce((sum, f) => sum + (f.ter * f.current_value), 0) / mfs.reduce((sum, f) => sum + f.current_value, 0)
+      : 1.65;
+    const annualFeeDrag = mfs.reduce((sum, f) => sum + (f.current_value * (f.ter / 100)), 0) / 100;
+    const potentialAnnualSavings = mfs.reduce((sum, f) => sum + (f.current_value * (Math.max(0, f.ter - 0.12) / 100)), 0) / 100;
+
+    let fundAuditRows = '';
+    if (mfs.length > 0) {
+      fundAuditRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Your Mutual Fund Fee Audit</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Fund Name</th>
+              <th class="text-right">Current Value</th>
+              <th class="text-right">Expense Ratio</th>
+              <th class="text-right">Est. Annual Fee</th>
+              <th class="text-right">Switch Savings (Direct)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${mfs.map(f => {
+              const fee = (f.current_value * (f.ter / 100)) / 100;
+              const savings = (f.current_value * (Math.max(0, f.ter - 0.12) / 100)) / 100;
+              const isHigh = f.ter >= 1.0;
+              return `
+                <tr>
+                  <td><strong>${f.name}</strong></td>
+                  <td class="text-right">${formatINR(f.current_value)}</td>
+                  <td class="text-right">${f.ter.toFixed(2)}%</td>
+                  <td class="text-right">${formatINR(fee * 100)}</td>
+                  <td class="text-right" style="color: ${savings > 0 ? '#10b981' : '#6b7280'}; font-weight: 600;">
+                    ${savings > 0 ? formatINR(savings * 100) : '—'}
+                  </td>
+                  <td>
+                    <span class="badge badge-${isHigh ? 'bad' : 'good'}">
+                      ${isHigh ? 'High Fee' : 'Low Fee'}
+                    </span>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    expenseRatioHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Expense Ratio Analyzer & Fee Audit</div>
+        
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Mutual Fund Value</div>
+            <div class="kpi-value">${formatINR(totalMfValue * 100)}</div>
+            <div class="kpi-sub">${mfs.length} Active Funds</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #f59e0b;">
+            <div class="kpi-label">Weighted Avg. Fee</div>
+            <div class="kpi-value">${avgTer.toFixed(2)}%</div>
+            <div class="kpi-sub">Portfolio Expense Ratio</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #ef4444;">
+            <div class="kpi-label">Annual Fee Drag</div>
+            <div class="kpi-value">${formatINR(annualFeeDrag * 100)}</div>
+            <div class="kpi-sub">Estimated annual fees paid</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Direct Plan Savings</div>
+            <div class="kpi-value">${formatINR(potentialAnnualSavings * 100)}</div>
+            <div class="kpi-sub">Savings by switching to Direct</div>
+          </div>
+        </div>
+
+        <div style="padding: 12px; border: 1px solid #86efac; border-radius: 6px; background-color: #f0fdf4; color: #15803d; font-size: 11.5px; line-height: 17px; margin-bottom: 15px;">
+          <strong>Actionable Wealth Insight:</strong> Switching to a lower expense ratio fund (Direct Plan) could save approximately <strong>${formatINR(proj20.savings * 100)}</strong> over 20 years. Mutual fund fees compound silently and eat away at your long-term wealth. Switching from a Regular plan (avg. 1.65% fee) to a Direct plan (avg. 0.12% fee) saves massive amounts of money.
+        </div>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px;">
+          Long-Term Compounding Fee Drag Projections ${isHypothetical ? '(Hypothetical Simulation: ₹5L lump + ₹15k/mo SIP)' : `(Based on your actual portfolio: ${formatINR(simCurVal * 100)} lump + ${formatINR(simSip * 100)}/mo SIP)`}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Horizon (Years)</th>
+              <th class="text-right">Low Fee Value (0.12% TER)</th>
+              <th class="text-right">High Fee Value (1.65% TER)</th>
+              <th class="text-right" style="color: #ef4444;">Wealth Lost to Fees</th>
+              <th class="text-right">Fee Drag (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>10 Years</strong></td>
+              <td class="text-right">${formatINR(proj10.finalA * 100)}</td>
+              <td class="text-right">${formatINR(proj10.finalB * 100)}</td>
+              <td class="text-right" style="color: #ef4444; font-weight: 600;">${formatINR(proj10.savings * 100)}</td>
+              <td class="text-right" style="font-weight: bold; color: #ef4444;">${proj10.dragPct.toFixed(1)}%</td>
+            </tr>
+            <tr>
+              <td><strong>20 Years</strong></td>
+              <td class="text-right">${formatINR(proj20.finalA * 100)}</td>
+              <td class="text-right">${formatINR(proj20.finalB * 100)}</td>
+              <td class="text-right" style="color: #ef4444; font-weight: 600;">${formatINR(proj20.savings * 100)}</td>
+              <td class="text-right" style="font-weight: bold; color: #ef4444;">${proj20.dragPct.toFixed(1)}%</td>
+            </tr>
+            <tr>
+              <td><strong>30 Years</strong></td>
+              <td class="text-right">${formatINR(proj30.finalA * 100)}</td>
+              <td class="text-right">${formatINR(proj30.finalB * 100)}</td>
+              <td class="text-right" style="color: #ef4444; font-weight: 600;">${formatINR(proj30.savings * 100)}</td>
+              <td class="text-right" style="font-weight: bold; color: #ef4444;">${proj30.dragPct.toFixed(1)}%</td>
+            </tr>
+          </tbody>
+        </table>
+
+        ${fundAuditRows}
+      </div>
+    `;
+  }
+
+  let debtPayoffHtml = '';
+  if (selected.debt_payoff) {
+    const activeLoans = getActiveLoans(userId!);
+    const isHypothetical = activeLoans.length === 0;
+    const simLoans = isHypothetical ? getMockLoans(userId!) : activeLoans;
+    const extraPay = 1500000; // ₹15,000 in paise
+
+    const avalanche = simulatePayoff(simLoans, extraPay, 'avalanche');
+    const snowball = simulatePayoff(simLoans, extraPay, 'snowball');
+
+    const totalOutstanding = simLoans.reduce((sum, l) => sum + l.outstanding_amount, 0) / 100;
+
+    let loanAuditRows = '';
+    avalanche.loanDetails.forEach(detail => {
+      const typeLabel = detail.loanType.toUpperCase().replace('_', ' ');
+      const name = detail.provider ? `${typeLabel} (${detail.provider})` : typeLabel;
+      loanAuditRows += `
+        <tr>
+          <td><strong>${name}</strong></td>
+          <td class="text-right">${formatINR(detail.outstanding)}</td>
+          <td class="text-right">${detail.interestRate.toFixed(1)}%</td>
+          <td class="text-right" style="font-weight: 700; color: #3b82f6;">
+            ${detail.acceleratedMonths} mo <span style="font-weight: normal; color: #6b7280;">(vs ${detail.baselineMonths} mo)</span>
+          </td>
+          <td class="text-right" style="color: ${detail.savings > 0 ? '#10b981' : '#6b7280'}; font-weight: 600;">
+            ${detail.savings > 0 ? formatINR(detail.savings) : '—'}
+          </td>
+        </tr>
+      `;
+    });
+
+    debtPayoffHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Debt Payoff Planner & Acceleration Audit</div>
+        
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Debt Outstanding</div>
+            <div class="kpi-value">${formatINR(totalOutstanding * 100)}</div>
+            <div class="kpi-sub">${simLoans.length} Included Loans</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #8b5cf6;">
+            <div class="kpi-label">Extra Prepayment</div>
+            <div class="kpi-value">${formatINR(extraPay)}</div>
+            <div class="kpi-sub">Monthly added payment</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Interest Saved</div>
+            <div class="kpi-value">${formatINR(avalanche.interestSaved)}</div>
+            <div class="kpi-sub">Via Avalanche method</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Timeline Accelerated</div>
+            <div class="kpi-value">${avalanche.monthsSaved} Months</div>
+            <div class="kpi-sub">Time saved to debt-freedom</div>
+          </div>
+        </div>
+
+        <div style="padding: 12px; border: 1px solid #86efac; border-radius: 6px; background-color: #f0fdf4; color: #15803d; font-size: 11.5px; line-height: 17px; margin-bottom: 15px;">
+          <strong>Actionable Debt-Free Recommendation:</strong> By applying the Avalanche method (repaying high-interest debt first) with an extra <strong>${formatINR(extraPay)}/month</strong>, you would save <strong>${formatINR(avalanche.interestSaved)}</strong> in unnecessary interest fees and pay off all loans <strong>${avalanche.monthsSaved} months earlier</strong>! You will be completely debt-free by <strong>${avalanche.newPayoffDate}</strong>.
+        </div>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px;">
+          Comparison of Debt Payoff Strategies ${isHypothetical ? '(Hypothetical Simulation: ₹40L home + ₹8L car + ₹3L personal loan)' : '(Based on your actual active loans)'}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Strategy Method</th>
+              <th class="text-right">Extra Prepayment</th>
+              <th class="text-right">Total Interest Paid</th>
+              <th class="text-right" style="color: #10b981;">Total Interest Saved</th>
+              <th class="text-right">Payoff Duration</th>
+              <th class="text-right">Debt-Free Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Baseline (Mandatory EMI Only)</strong></td>
+              <td class="text-right">—</td>
+              <td class="text-right">${formatINR(avalanche.baselineInterest)}</td>
+              <td class="text-right" style="color: #6b7280;">—</td>
+              <td class="text-right">${avalanche.baselineDuration} Months</td>
+              <td class="text-right">${getFutureMonthYear(avalanche.baselineDuration)}</td>
+            </tr>
+            <tr style="background-color: #ecfdf5;">
+              <td><strong style="color: #065f46;">Avalanche Method (Highest Rate First)</strong></td>
+              <td class="text-right" style="font-weight: 600;">${formatINR(extraPay)}/mo</td>
+              <td class="text-right">${formatINR(avalanche.acceleratedInterest)}</td>
+              <td class="text-right" style="color: #10b981; font-weight: bold;">${formatINR(avalanche.interestSaved)}</td>
+              <td class="text-right" style="font-weight: bold; color: #0f766e;">${avalanche.acceleratedDuration} Months</td>
+              <td class="text-right" style="font-weight: bold; color: #0f766e;">${avalanche.newPayoffDate}</td>
+            </tr>
+            <tr>
+              <td><strong>Snowball Method (Smallest Debt First)</strong></td>
+              <td class="text-right" style="font-weight: 600;">${formatINR(extraPay)}/mo</td>
+              <td class="text-right">${formatINR(snowball.acceleratedInterest)}</td>
+              <td class="text-right" style="color: #10b981; font-weight: bold;">${formatINR(snowball.interestSaved)}</td>
+              <td class="text-right" style="font-weight: bold;">${snowball.acceleratedDuration} Months</td>
+              <td class="text-right" style="font-weight: bold;">${snowball.newPayoffDate}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Individual Loan Closure & Savings (Avalanche Strategy)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Loan Account / Provider</th>
+              <th class="text-right">Outstanding Balance</th>
+              <th class="text-right">Interest Rate</th>
+              <th class="text-right">Accelerated Payoff (vs Base)</th>
+              <th class="text-right" style="color: #10b981;">Interest Saved</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${loanAuditRows}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  let passiveIncomeHtml = '';
+  if (selected.passive_income) {
+    const pi = getPassiveIncomeSummary(userId);
+    let receivedRows = '';
+    if (pi.received_list.length > 0) {
+      receivedRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 10px;">Logged Income Receipts</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Asset / Source</th>
+              <th>Type</th>
+              <th>Date Received</th>
+              <th class="text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pi.received_list.map(r => `
+              <tr>
+                <td><strong>${r.name}</strong></td>
+                <td>${r.type_label}</td>
+                <td>${r.date}</td>
+                <td class="text-right" style="font-weight: 600; color: #10b981;">${formatINR(r.amount)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    let forecastRows = '';
+    if (pi.forecast_timeline.length > 0) {
+      forecastRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Upcoming Payout Forecast (Next 12 Months)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Asset / Source</th>
+              <th>Payout Type</th>
+              <th>Expected Date</th>
+              <th class="text-right">Expected Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pi.forecast_timeline.map(f => `
+              <tr>
+                <td><strong>${f.asset_name}</strong></td>
+                <td>${f.type_label}</td>
+                <td>${f.date}</td>
+                <td class="text-right" style="font-weight: 600; color: #3b82f6;">${formatINR(f.amount)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    passiveIncomeHtml = `
+      <div class="section">
+        <div class="section-title">Passive Income & Forecast</div>
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Received (Current FY)</div>
+            <div class="kpi-value">${formatINR(pi.received_this_year)}</div>
+            <div class="kpi-sub">Total passive cashflow</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Projected (Next 12M)</div>
+            <div class="kpi-value">${formatINR(pi.forecasted_12m)}</div>
+            <div class="kpi-sub">Auto-forecasted upcoming cashflow</div>
+          </div>
+        </div>
+        ${receivedRows}
+        ${forecastRows}
+      </div>
+    `;
+  }
+
+  let sectorHtml = '';
+  if (selected.sector) {
+    const s = getSectorOverlapAnalysis(userId);
+    let sectorRows = '';
+    if (s.sector_allocation.length > 0) {
+      sectorRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 10px;">True Sector Breakdown</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Sector Name</th>
+              <th class="text-right">Exposure Value</th>
+              <th class="text-right">Allocation</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${s.sector_allocation.map(item => `
+              <tr>
+                <td><strong>${item.sector}</strong></td>
+                <td class="text-right">${formatINR(item.amount)}</td>
+                <td class="text-right" style="font-weight: 600; color: #111827;">${item.pct}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    let stockRows = '';
+    if (s.stock_concentration.length > 0) {
+      stockRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Top Consolidated Company Exposures</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Stock / Holding</th>
+              <th class="text-right">Direct Exposure</th>
+              <th class="text-right">Indirect Exposure</th>
+              <th class="text-right">Total Exposure</th>
+              <th class="text-right">Allocation</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${s.stock_concentration.map(item => `
+              <tr>
+                <td><strong>${item.stock}</strong></td>
+                <td class="text-right">${item.direct > 0 ? formatINR(item.direct) : '—'}</td>
+                <td class="text-right">${item.indirect > 0 ? formatINR(item.indirect) : '—'}</td>
+                <td class="text-right" style="font-weight: 600; color: #1f2937;">${formatINR(item.total)}</td>
+                <td class="text-right" style="font-weight: 700; color: #3b82f6;">${item.pct}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    let alertHtml = '';
+    if (s.alerts.length > 0) {
+      alertHtml = `
+        <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 8px;">
+          ${s.alerts.map(alert => `
+            <div style="padding: 10px 12px; border: 1px solid #fca5a5; border-radius: 6px; background-color: #fef2f2; color: #991b1b; font-size: 11px; line-height: 16px; page-break-inside: avoid;">
+              <strong>Concentration Warning:</strong> ${alert.title} &bull; ${alert.text}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    sectorHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Sector Overlap & Concentration Audit</div>
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Equity Portfolio Value</div>
+            <div class="kpi-value">${formatINR(s.total_equity_value)}</div>
+            <div class="kpi-sub">Total Stocks & Mutual Funds</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Sectors Covered</div>
+            <div class="kpi-value">${s.sector_allocation.length} Sectors</div>
+            <div class="kpi-sub">Equity Diversification</div>
+          </div>
+        </div>
+        ${sectorRows}
+        ${stockRows}
+        ${alertHtml}
+      </div>
+    `;
+  }
+
+  let subscriptionsHtml = '';
+  if (selected.subscriptions) {
+    const activeSubs = getSubscriptions(userId);
+    const hasSubs = activeSubs.length > 0;
+    const displaySubs = hasSubs ? activeSubs : [
+      { id: 'm1', name: 'Netflix', amount: 64900, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'entertainment', status: 'active', notes: 'Premium 4K plan' },
+      { id: 'm2', name: 'Spotify', amount: 11900, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'music', status: 'active', notes: 'Individual plan' },
+      { id: 'm3', name: 'Google One', amount: 13000, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'cloud', status: 'active', notes: '100 GB storage' },
+      { id: 'm4', name: 'Gym Membership', amount: 120000, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'fitness', status: 'active', notes: 'Quarterly cult.fit pass' }
+    ];
+
+    let monthlyTotal = 0;
+    let yearlyTotal = 0;
+    displaySubs.forEach((s: any) => {
+      let amt = s.amount;
+      if (s.billing_cycle === 'monthly') {
+        monthlyTotal += amt;
+        yearlyTotal += amt * 12;
+      } else if (s.billing_cycle === 'yearly') {
+        monthlyTotal += Math.round(amt / 12);
+        yearlyTotal += amt;
+      } else if (s.billing_cycle === 'quarterly') {
+        monthlyTotal += Math.round(amt / 3);
+        yearlyTotal += amt * 4;
+      }
+    });
+
+    const today = new Date(todayISO() + 'T00:00:00');
+    const upcomingRenewals = displaySubs
+      .map((s: any) => {
+        const nextDate = new Date(s.next_billing_date + 'T00:00:00');
+        const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return { ...s, daysLeft: diffDays >= 0 ? diffDays : 0 };
+      })
+      .sort((a: any, b: any) => a.daysLeft - b.daysLeft);
+
+    subscriptionsHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Subscription & Recurring Expense Tracker</div>
+        
+        ${!hasSubs ? `
+          <div class="warning-banner" style="background-color: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; margin-bottom: 15px;">
+            <div class="warning-title" style="color: #1d4ed8;">DEMO MODE: EDUCATIONAL FALLBACK ACTIVE</div>
+            No active subscriptions detected in your profile database. Showing a curated baseline demo of typical subscription services to illustrate optimization potentials.
+          </div>
+        ` : ''}
+
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Active Subscriptions</div>
+            <div class="kpi-value">${displaySubs.length} tracked</div>
+            <div class="kpi-sub">Outflows monitored</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #ef4444;">
+            <div class="kpi-label">Monthly Outflow</div>
+            <div class="kpi-value">${formatINR(monthlyTotal)}</div>
+            <div class="kpi-sub">Recurring billing speed</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #f59e0b;">
+            <div class="kpi-label">Annualized Outflow</div>
+            <div class="kpi-value">${formatINR(yearlyTotal)}</div>
+            <div class="kpi-sub">Compounded yearly burden</div>
+          </div>
+        </div>
+
+        <div style="padding: 12px; border: 1px solid #fca5a5; border-radius: 6px; background-color: #fef2f2; color: #991b1b; font-size: 11.5px; line-height: 17px; margin-bottom: 15px;">
+          <strong>Savings Insight:</strong> You are spending approximately <strong>${formatINR(yearlyTotal)} annually</strong> across recurring memberships. Auditing and canceling just one unused service (e.g. saving ₹500/month) saves <strong>₹6,000 every year</strong>, which could be redirected towards high-yield compounding financial goals!
+        </div>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px;">Active Subscriptions Audit</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Service / Merchant</th>
+              <th>Category</th>
+              <th>Billing Cycle</th>
+              <th class="text-right">Billing Amount</th>
+              <th>Next Renewal Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${displaySubs.map((s: any) => {
+              const categoryLabels: Record<string, string> = {
+                entertainment: 'Entertainment',
+                music: 'Music & Audio',
+                cloud: 'Cloud & SaaS',
+                utilities: 'Utilities',
+                fitness: 'Fitness & Gym',
+                other: 'Other Recurring'
+              };
+              const cycleLabels: Record<string, string> = {
+                monthly: 'Monthly',
+                quarterly: 'Quarterly',
+                yearly: 'Yearly'
+              };
+              const catLabel = categoryLabels[s.category] || titleCase(s.category);
+              const cycleLabel = cycleLabels[s.billing_cycle] || titleCase(s.billing_cycle);
+              const statusTone = s.status === 'active' ? 'good' : 'muted';
+              return `
+                <tr>
+                  <td><strong>${s.name}</strong>${s.notes ? `<br/><span style="font-size: 10px; color: #6b7280;">${s.notes}</span>` : ''}</td>
+                  <td>${catLabel}</td>
+                  <td>${cycleLabel}</td>
+                  <td class="text-right" style="font-weight: 600; color: #1f2937;">${formatINR(s.amount)}</td>
+                  <td>${s.next_billing_date}</td>
+                  <td><span class="badge badge-${statusTone}">${titleCase(s.status)}</span></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Upcoming Renewal Schedule (Next 30 Days)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Service / Merchant</th>
+              <th>Due Date</th>
+              <th>Timeline Remaining</th>
+              <th class="text-right">Amount Due</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${upcomingRenewals.map((s: any) => `
+              <tr>
+                <td><strong>${s.name}</strong></td>
+                <td>${s.next_billing_date}</td>
+                <td style="font-weight: bold; color: ${s.daysLeft <= 3 ? '#ef4444' : s.daysLeft <= 7 ? '#f59e0b' : '#3b82f6'};">
+                  ${s.daysLeft === 0 ? 'Today' : s.daysLeft === 1 ? 'Tomorrow' : `In ${s.daysLeft} days`}
+                </td>
+                <td class="text-right" style="font-weight: 700;">${formatINR(s.amount)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   return `
     <!DOCTYPE html>
     <html>
@@ -1003,12 +1901,19 @@ const buildHtmlReport = async (
 
       ${healthHtml}
       ${benchmarkHtml}
+      ${benchmarkNiftyHtml}
       ${passwordHtml}
       ${assetsHtml}
       ${sipHtml}
       ${loansHtml}
       ${protectHtml}
       ${goalsHtml}
+      ${taxHtml}
+      ${expenseRatioHtml}
+      ${debtPayoffHtml}
+      ${passiveIncomeHtml}
+      ${sectorHtml}
+      ${subscriptionsHtml}
       ${vaultHtml}
     </body>
     </html>
@@ -1031,7 +1936,11 @@ const ReportsScreen: React.FC = () => {
   const pwdHealth = useData(() => passwordHealth(userId!));
   const benchmark = useData(() => benchmarkComparison(userId!));
   const goals = useData(() => goalsProgress(userId!));
-
+  const tax = useData(() => capitalGains(userId!));
+  const benchmarkNifty = useData(() => getBenchmarkComparison(userId!, 'nifty'));
+  const passiveIncome = useData(() => getPassiveIncomeSummary(userId!));
+  const sectorAnalysis = useData(() => getSectorOverlapAnalysis(userId!));
+ 
   const [selected, setSelected] = useState<Record<string, boolean>>({
     assets: true,
     loans: true,
@@ -1041,6 +1950,13 @@ const ReportsScreen: React.FC = () => {
     health: true,
     password: true,
     benchmark: true,
+    benchmark_nifty: true,
+    tax: true,
+    expense_ratio: true,
+    debt_payoff: true,
+    passive_income: true,
+    sector: true,
+    subscriptions: true,
   });
   const [snack, setSnack] = useState('');
   const allOn = MODULES.every((m) => selected[m.key]);
@@ -1078,6 +1994,16 @@ const ReportsScreen: React.FC = () => {
         const diff = Number((r.actual - r.recommended).toFixed(1));
         lines.push(`  • ${r.type}: Actual ${r.actual}% vs Rec ${r.recommended}% (Diff: ${diff > 0 ? `+${diff}` : diff}%)`);
       });
+      lines.push('');
+    }
+    
+    if (selected.benchmark_nifty) {
+      lines.push('— Benchmark vs Nifty Audit —');
+      const activeAll = benchmarkNifty.periods.find((p) => p.period === 'All') || benchmarkNifty.periods[2];
+      const active1Y = benchmarkNifty.periods.find((p) => p.period === '1Y') || benchmarkNifty.periods[0];
+      lines.push(`Portfolio XIRR (All Time): ${activeAll.portfolio_return != null ? `${activeAll.portfolio_return}%` : '—'} vs Nifty 50: ${activeAll.benchmark_return}% (Alpha: ${activeAll.alpha != null ? `${activeAll.alpha > 0 ? '+' : ''}${activeAll.alpha}%` : '—'})`);
+      lines.push(`Equity-Only XIRR (All Time): ${activeAll.equity_return != null ? `${activeAll.equity_return}%` : '—'} (Alpha: ${activeAll.equity_alpha != null ? `${activeAll.equity_alpha > 0 ? '+' : ''}${activeAll.equity_alpha}%` : '—'})`);
+      lines.push(`Portfolio XIRR (1 Year): ${active1Y.portfolio_return != null ? `${active1Y.portfolio_return}%` : '—'} vs Nifty 50: ${active1Y.benchmark_return}% (Alpha: ${active1Y.alpha != null ? `${active1Y.alpha > 0 ? '+' : ''}${active1Y.alpha}%` : '—'})`);
       lines.push('');
     }
 
@@ -1127,6 +2053,165 @@ const ReportsScreen: React.FC = () => {
       goals.goals.forEach((g) => lines.push(`  • ${g.name}: ${g.pct}% (${g.status_label})`));
       lines.push('');
     }
+    if (selected.tax) {
+      lines.push('— Capital Gains Audit —');
+      lines.push(`Realized STCG: ${formatINR(tax.realized_stcg)} · Realized LTCG: ${formatINR(tax.realized_ltcg)} (Total: ${formatINR(tax.realized_total)})`);
+      lines.push(`Unrealized STCG: ${formatINR(tax.unrealized_stcg)} · Unrealized LTCG: ${formatINR(tax.unrealized_ltcg)} (Total: ${formatINR(tax.unrealized_total)})`);
+      lines.push(`Combined Total Gains: ${formatINR(tax.grand_total)}`);
+      if (tax.harvest_alert.alert_text) {
+        lines.push(`Recommendation: ${tax.harvest_alert.alert_text}`);
+      }
+      lines.push('');
+    }
+    if (selected.expense_ratio) {
+      lines.push('— Expense Ratio Analyzer & Fee Audit —');
+      const mutualFunds = all<Asset>(
+        `SELECT a.* FROM assets a
+         JOIN asset_types t ON t.id = a.asset_type_id
+         WHERE a.user_id = ? AND t.slug = 'mutual_fund' AND a.current_value > 0`,
+        [userId!]
+      );
+
+      const mfs = mutualFunds.map((a) => {
+        let ter = 1.65;
+        try {
+          const details = a.details_json ? JSON.parse(a.details_json) : null;
+          if (details && details.expense_ratio != null && !isNaN(parseFloat(details.expense_ratio))) {
+            ter = parseFloat(details.expense_ratio);
+          }
+        } catch { /* ignore */ }
+        return { ...a, ter };
+      });
+
+      const totalMfValue = mfs.reduce((sum, f) => sum + f.current_value, 0) / 100;
+      const totalMfSip = mfs.reduce((sum, f) => sum + (f.is_sip ? f.sip_monthly_amount : 0), 0) / 100;
+      const isHypothetical = totalMfValue === 0;
+      const simCurVal = isHypothetical ? 500000 : totalMfValue;
+      const simSip = isHypothetical ? 15000 : totalMfSip;
+
+      const avgTer = mfs.length > 0
+        ? mfs.reduce((sum, f) => sum + (f.ter * f.current_value), 0) / mfs.reduce((sum, f) => sum + f.current_value, 0)
+        : 1.65;
+      const annualFeeDrag = mfs.reduce((sum, f) => sum + (f.current_value * (f.ter / 100)), 0) / 100;
+      const potentialAnnualSavings = mfs.reduce((sum, f) => sum + (f.current_value * (Math.max(0, f.ter - 0.12) / 100)), 0) / 100;
+
+      lines.push(`Total Mutual Fund Value: ${formatINR(totalMfValue * 100)}`);
+      lines.push(`Weighted Average Expense Ratio: ${avgTer.toFixed(2)}%`);
+      lines.push(`Estimated Annual Fee Drag: ${formatINR(annualFeeDrag * 100)}`);
+      lines.push(`Potential Annual Direct Plan Savings: ${formatINR(potentialAnnualSavings * 100)}`);
+
+      const proj10 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 10);
+      const proj20 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 20);
+      const proj30 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 30);
+
+      lines.push(`Compounding Projections (${isHypothetical ? 'Hypothetical 5L lump + 15k/mo SIP' : 'Based on your actual portfolio'}):`);
+      lines.push(`  • 10 Years: Direct ${formatINR(proj10.finalA * 100)} vs Regular ${formatINR(proj10.finalB * 100)} (Wealth lost: ${formatINR(proj10.savings * 100)}, Drag: ${proj10.dragPct.toFixed(1)}%)`);
+      lines.push(`  • 20 Years: Direct ${formatINR(proj20.finalA * 100)} vs Regular ${formatINR(proj20.finalB * 100)} (Wealth lost: ${formatINR(proj20.savings * 100)}, Drag: ${proj20.dragPct.toFixed(1)}%)`);
+      lines.push(`  • 30 Years: Direct ${formatINR(proj30.finalA * 100)} vs Regular ${formatINR(proj30.finalB * 100)} (Wealth lost: ${formatINR(proj30.savings * 100)}, Drag: ${proj30.dragPct.toFixed(1)}%)`);
+      
+      lines.push(`Recommendation: Switching to a lower expense ratio fund (Direct Plan) could save approximately ${formatINR(proj20.savings * 100)} over 20 years.`);
+      
+      if (mfs.length > 0) {
+        lines.push('Fund-by-Fund Fee Audit:');
+        mfs.forEach(f => {
+          const savings = (f.current_value * (Math.max(0, f.ter - 0.12) / 100)) / 100;
+          lines.push(`  • ${f.name}: ${f.ter.toFixed(2)}% Expense · Value: ${formatINR(f.current_value)}${savings > 0 ? ` · Potential Savings: ${formatINR(savings * 100)}/yr` : ''}`);
+        });
+      }
+      lines.push('');
+    }
+    if (selected.debt_payoff) {
+      lines.push('— Debt Payoff Planner & Acceleration Audit —');
+      const activeLoans = getActiveLoans(userId!);
+      const isHypothetical = activeLoans.length === 0;
+      const simLoans = isHypothetical ? getMockLoans(userId!) : activeLoans;
+      const extraPay = 1500000; // ₹15,000 in paise
+
+      const avalanche = simulatePayoff(simLoans, extraPay, 'avalanche');
+      const snowball = simulatePayoff(simLoans, extraPay, 'snowball');
+
+      const totalOut = simLoans.reduce((sum, l) => sum + l.outstanding_amount, 0);
+      lines.push(`Total Debt Outstanding: ${formatINR(totalOut)}`);
+      lines.push(`Extra Monthly Prepayment: ${formatINR(extraPay)}`);
+      lines.push(`Comparison of Debt Payoff Strategies (${isHypothetical ? 'Hypothetical Simulation' : 'Based on your actual loans'}):`);
+      lines.push(`  • Baseline (Mandatory EMI Only): Paid off in ${avalanche.baselineDuration} months · Total Interest: ${formatINR(avalanche.baselineInterest)}`);
+      lines.push(`  • Avalanche Method (Highest Rate First): Paid off in ${avalanche.acceleratedDuration} months (${avalanche.newPayoffDate}) · Savings: ${formatINR(avalanche.interestSaved)} · Months Saved: ${avalanche.monthsSaved}`);
+      lines.push(`  • Snowball Method (Smallest Debt First): Paid off in ${snowball.acceleratedDuration} months (${snowball.newPayoffDate}) · Savings: ${formatINR(snowball.interestSaved)} · Months Saved: ${snowball.monthsSaved}`);
+      lines.push(`Recommendation: Applying the Avalanche method saves the most interest. You would save ${formatINR(avalanche.interestSaved)} and be completely debt-free by ${avalanche.newPayoffDate}, ${avalanche.monthsSaved} months earlier.`);
+      
+      if (simLoans.length > 0) {
+        lines.push('Closure Timeline & Savings (Avalanche Strategy):');
+        avalanche.loanDetails.forEach(detail => {
+          const typeLabel = detail.loanType.toUpperCase().replace('_', ' ');
+          const name = detail.provider ? `${typeLabel} (${detail.provider})` : typeLabel;
+          lines.push(`  • ${name}: Outstanding: ${formatINR(detail.outstanding)} · Rate: ${detail.interestRate}% · Paid off in ${detail.acceleratedMonths} mo (vs ${detail.baselineMonths} mo)${detail.savings > 0 ? ` · Interest Saved: ${formatINR(detail.savings)}` : ''}`);
+        });
+      }
+      lines.push('');
+    }
+    if (selected.passive_income) {
+      lines.push('— Passive Income & Forecast —');
+      lines.push(`Received (Current FY): ${formatINR(passiveIncome.received_this_year)}`);
+      lines.push(`Projected (Next 12M): ${formatINR(passiveIncome.forecasted_12m)}`);
+      if (passiveIncome.next_payout) {
+        lines.push(`Next Expected: ${formatINR(passiveIncome.next_payout.amount)} on ${passiveIncome.next_payout.date} (${passiveIncome.next_payout.type_label})`);
+      }
+      lines.push('');
+    }
+    if (selected.sector) {
+      lines.push('— Sector Overlap & Concentration —');
+      lines.push(`Total Equity Value: ${formatINR(sectorAnalysis.total_equity_value)}`);
+      if (sectorAnalysis.sector_allocation.length > 0) {
+        lines.push('Sector Allocation:');
+        sectorAnalysis.sector_allocation.forEach((s) => lines.push(`  • ${s.sector}: ${s.pct}% (${formatINR(s.amount)})`));
+      }
+      if (sectorAnalysis.stock_concentration.length > 0) {
+        lines.push('Top Consolidated Stock Exposures:');
+        sectorAnalysis.stock_concentration.forEach((st) => lines.push(`  • ${st.stock}: ${st.pct}% (${formatINR(st.total)})`));
+      }
+      if (sectorAnalysis.alerts.length > 0) {
+        lines.push('Concentration Warnings:');
+        sectorAnalysis.alerts.forEach((alert) => lines.push(`  • ${alert.title}: ${alert.text}`));
+      }
+      lines.push('');
+    }
+    
+    if (selected.subscriptions) {
+      lines.push('— Subscription Tracker —');
+      const activeSubs = getSubscriptions(userId!);
+      const hasSubs = activeSubs.length > 0;
+      const displaySubs = hasSubs ? activeSubs : [
+        { id: 'm1', name: 'Netflix', amount: 64900, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'entertainment', status: 'active', notes: 'Premium 4K plan' },
+        { id: 'm2', name: 'Spotify', amount: 11900, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'music', status: 'active', notes: 'Individual plan' },
+        { id: 'm3', name: 'Google One', amount: 13000, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'cloud', status: 'active', notes: '100 GB storage' },
+        { id: 'm4', name: 'Gym Membership', amount: 120000, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'fitness', status: 'active', notes: 'Quarterly cult.fit pass' }
+      ];
+
+      let monthlyTotal = 0;
+      let yearlyTotal = 0;
+      displaySubs.forEach((s: any) => {
+        let amt = s.amount;
+        if (s.billing_cycle === 'monthly') {
+          monthlyTotal += amt;
+          yearlyTotal += amt * 12;
+        } else if (s.billing_cycle === 'yearly') {
+          monthlyTotal += Math.round(amt / 12);
+          yearlyTotal += amt;
+        } else if (s.billing_cycle === 'quarterly') {
+          monthlyTotal += Math.round(amt / 3);
+          yearlyTotal += amt * 4;
+        }
+      });
+
+      lines.push(`Active Subscriptions: ${displaySubs.length}`);
+      lines.push(`Total Monthly Outflow: ${formatINR(monthlyTotal)}`);
+      lines.push(`Total Yearly Outflow: ${formatINR(yearlyTotal)}`);
+      displaySubs.forEach((s: any) => {
+        lines.push(`  • ${s.name}: ${formatINR(s.amount)} (${titleCase(s.billing_cycle)}) - Next: ${s.next_billing_date}`);
+      });
+      lines.push('');
+    }
+
     return lines.join('\n');
   };
 
@@ -1277,7 +2362,56 @@ const ReportsScreen: React.FC = () => {
           </View>
         </SectionCard>
 
-        {/* 3. Password Health Card */}
+        {/* 3. Capital Gains Audit Card */}
+        <SectionCard title="Capital Gains Audit" style={{ marginBottom: 12 }}>
+          <View style={{ gap: 12 }}>
+            <Row>
+              <Kpi
+                flex
+                label="Realized Gains"
+                value={formatINR(tax.realized_total)}
+                sub={`STCG: ${formatINR(tax.realized_stcg)}\nLTCG: ${formatINR(tax.realized_ltcg)}`}
+                subTone={tax.realized_total >= 0 ? 'good' : 'bad'}
+              />
+              <Kpi
+                flex
+                label="Unrealized Gains"
+                value={formatINR(tax.unrealized_total)}
+                sub={`STCG: ${formatINR(tax.unrealized_stcg)}\nLTCG: ${formatINR(tax.unrealized_ltcg)}`}
+                subTone={tax.unrealized_total >= 0 ? 'good' : 'bad'}
+              />
+            </Row>
+
+            <Divider style={{ marginVertical: 4 }} />
+            
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text variant="titleSmall" style={{ fontWeight: '700' }}>Combined Total Gains</Text>
+              <Text variant="titleSmall" style={{ fontWeight: '800', color: tax.grand_total >= 0 ? palette.good : palette.danger }}>
+                {formatINR(tax.grand_total)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: -4 }}>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Combined STCG / LTCG</Text>
+              <Text variant="bodySmall" style={{ fontWeight: '600', color: theme.colors.onSurfaceVariant }}>
+                {formatINR(tax.stcg_total)} / {formatINR(tax.ltcg_total)}
+              </Text>
+            </View>
+            {tax.harvest_alert.alert_text && (
+              <View style={{
+                flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginTop: 12, padding: 12,
+                borderRadius: theme.roundness, borderWidth: 1,
+                backgroundColor: 'rgba(82, 167, 126, 0.12)', borderColor: 'rgba(82, 167, 126, 0.3)'
+              }}>
+                <MaterialCommunityIcons name="piggy-bank" size={18} color={palette.good} style={{ marginTop: 1 }} />
+                <Text variant="bodySmall" style={{ flex: 1, color: theme.colors.onSurface, fontWeight: '600', lineHeight: 18 }}>
+                  {tax.harvest_alert.alert_text}
+                </Text>
+              </View>
+            )}
+          </View>
+        </SectionCard>
+
+        {/* 4. Password Health Card */}
         <SectionCard title="Password Health" style={{ marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Text variant="titleMedium" style={{ fontWeight: '700' }}>Vault Score</Text>

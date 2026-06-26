@@ -5,7 +5,7 @@
  */
 import React, { useLayoutEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Text, useTheme, Button } from 'react-native-paper';
+import { Text, useTheme, Button, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 
@@ -111,7 +111,10 @@ const InsightsScreen: React.FC = () => {
             <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', letterSpacing: 0.5 }}>
               PORTFOLIO HEALTH
             </Text>
-            <Text variant="headlineSmall" style={{ fontWeight: '800', color: healthColor }}>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, marginTop: 2, lineHeight: 15 }}>
+              Investment quality score. Evaluates asset allocation risk, returns (XIRR), fee drag, and SIP discipline.
+            </Text>
+            <Text variant="headlineSmall" style={{ fontWeight: '800', color: healthColor, marginTop: 4 }}>
               Grade {health.grade} · {health.label}
             </Text>
             <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
@@ -271,6 +274,20 @@ const InsightsScreen: React.FC = () => {
             ))}
           </View>
         )}
+
+        {returns.portfolio_xirr != null && (
+          <>
+            <Divider style={{ marginTop: 14, marginBottom: 12, opacity: 0.5 }} />
+            <Button
+              mode="outlined"
+              icon="chart-areaspline"
+              onPress={() => router.push('/benchmark' as any)}
+              style={{ borderRadius: theme.roundness }}
+            >
+              Detailed Benchmark Audit
+            </Button>
+          </>
+        )}
       </SectionCard>
 
       {/* ── Allocation & risk ── */}
@@ -309,6 +326,15 @@ const InsightsScreen: React.FC = () => {
             <LineItem key={c.cls} label={c.label} value={`${c.pct}% · ${formatINR(c.value)}`} />
           ))}
         </View>
+        <Divider style={{ marginTop: 14, marginBottom: 12, opacity: 0.5 }} />
+        <Button
+          mode="outlined"
+          icon="chart-pie"
+          onPress={() => router.push('/sector' as any)}
+          style={{ borderRadius: theme.roundness }}
+        >
+          Detailed Sector Overlap Audit
+        </Button>
       </SectionCard>
 
       {/* ── Hidden costs ── */}
@@ -328,6 +354,15 @@ const InsightsScreen: React.FC = () => {
         {cost.rows.length === 0 && (
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>No fee-bearing funds detected. Add an expense ratio to a fund's details to track its cost.</Text>
         )}
+        <Divider style={{ marginTop: 14, marginBottom: 12, opacity: 0.5 }} />
+        <Button
+          mode="outlined"
+          icon="calculator"
+          onPress={() => router.push('/expense-ratio' as any)}
+          style={{ borderRadius: theme.roundness }}
+        >
+          Expense Ratio Analyzer
+        </Button>
       </SectionCard>
 
       {/* ── Hold / Exit suggestions ── */}

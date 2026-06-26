@@ -6,8 +6,8 @@
  * change, qty + current-value KPIs, then a per-holding list each showing its own
  * 1D return. Read-only; never mutates portfolio data.
  */
-import React, { useLayoutEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useLayoutEffect, useEffect } from 'react';
+import { Pressable, ScrollView, StyleSheet, View, BackHandler } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
@@ -43,6 +43,20 @@ const DailyMovementScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
 
   const data = useData(() => dailyMovement(userId!));
+
+  // Hardware back press handler for Android
+  useEffect(() => {
+    const onBackPress = () => {
+      if (navigation.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/' as any);
+      }
+      return true; // prevent default behavior
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, router]);
 
   useLayoutEffect(() => {
     navigation.setOptions({

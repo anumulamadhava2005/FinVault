@@ -78,6 +78,7 @@ export const ASSET_TYPE_CONFIGS: Record<string, AssetTypeConfig> = {
     investmentDetailsSection: 'INVESTMENT DETAILS',
     extraFields: [
       { key: 'broker', label: 'Broker Platform (e.g. Groww)', type: 'text', detailKey: true },
+      { key: 'expense_ratio', label: 'Expense Ratio (%)', type: 'numeric', detailKey: true },
     ],
   },
   digital_gold: {
