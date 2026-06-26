@@ -10,6 +10,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Image } from 'expo-image';
 import * as Sharing from 'expo-sharing';
 import { useNavigation, router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BouncePressable from '../components/BouncePressable';
 import BillScanModal from '../components/BillScanModal';
 import NotificationBell from '../components/NotificationBell';
@@ -43,6 +44,7 @@ const getMimeType = (filename: string): string => {
 const ExpensesScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const now = new Date();
   const navigation = useNavigation();
 
@@ -1131,7 +1133,7 @@ const ExpensesScreen: React.FC = () => {
         style={{
           position: 'absolute',
           right: 16,
-          bottom: 28,
+          bottom: Math.max(insets.bottom, 16) + 16,
           zIndex: 10,
         }}
       >

@@ -4,6 +4,7 @@ import { LayoutAnimation, Platform, ScrollView, View, Alert } from 'react-native
 import { Button, Card, Dialog, FAB, Portal, Menu, TextInput, useTheme, Snackbar, Divider, Text, SegmentedButtons, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EmptyState, Kpi, LineItem, ProgressBar, Row, Screen, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
 import { all, insert, remove, newId } from '../db';
@@ -17,6 +18,7 @@ import { palette } from '../theme';
 const PassiveIncomeScreen: React.FC = () => {
   const { userId, refresh } = useApp();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
   // Navigation tabs
@@ -449,9 +451,8 @@ const PassiveIncomeScreen: React.FC = () => {
         label="Log Income"
         style={{
           position: 'absolute',
-          margin: 16,
-          right: 0,
-          bottom: 12,
+          right: 16,
+          bottom: Math.max(insets.bottom, 16) + 16,
           backgroundColor: theme.colors.primary,
         }}
         color={theme.colors.onPrimary}

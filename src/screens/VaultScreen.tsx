@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import { Button, Dialog, FAB, IconButton, Portal, Text, TextInput, useTheme, ActivityIndicator, Divider } from 'react-native-paper';
 import BouncePressable from '../components/BouncePressable';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -38,6 +39,7 @@ const LOCKOUT_SECONDS = 30;
 const VaultScreen: React.FC = () => {
   const { userId, refresh, vaultLockMode, masterPassword } = useApp();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   // Vault lock state
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -340,7 +342,7 @@ const VaultScreen: React.FC = () => {
 
       <BouncePressable
         onPress={() => setAddOpen(true)}
-        style={{ position: 'absolute', right: 16, bottom: 28, zIndex: 10 }}
+        style={{ position: 'absolute', right: 16, bottom: Math.max(insets.bottom, 16) + 16, zIndex: 10 }}
       >
         <FAB
           icon="plus"
