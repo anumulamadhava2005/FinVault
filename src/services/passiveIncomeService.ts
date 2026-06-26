@@ -6,6 +6,13 @@ import { formatINR } from '../utils/money';
 
 const today = () => new Date(todayISO() + 'T00:00:00');
 
+function toLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export interface PassiveIncomeReceived {
   id: string;
   name: string;
@@ -200,7 +207,7 @@ export const getPassiveIncomeSummary = (userId: string): PassiveIncomeSummary =>
 
         if (payoutDate >= t && payoutDate <= endForecastDate) {
           if (!maturity || payoutDate <= maturity) {
-            const dateStr = payoutDate.toISOString().split('T')[0];
+            const dateStr = toLocalYmd(payoutDate);
             forecast_timeline.push({
               date: dateStr,
               amount: payoutAmount,
@@ -221,7 +228,7 @@ export const getPassiveIncomeSummary = (userId: string): PassiveIncomeSummary =>
       
       if (nextMarch31 <= endForecastDate) {
         const interest = Math.round(a.current_value * (rate / 100));
-        const dateStr = nextMarch31.toISOString().split('T')[0];
+        const dateStr = toLocalYmd(nextMarch31);
 
         forecast_timeline.push({
           date: dateStr,
@@ -255,7 +262,7 @@ export const getPassiveIncomeSummary = (userId: string): PassiveIncomeSummary =>
       for (const qDate of quarters) {
         if (qDate >= t && qDate <= endForecastDate) {
           const payout = Math.round((a.current_value * (rate / 100)) / 4);
-          const dateStr = qDate.toISOString().split('T')[0];
+          const dateStr = toLocalYmd(qDate);
 
           forecast_timeline.push({
             date: dateStr,
@@ -285,7 +292,7 @@ export const getPassiveIncomeSummary = (userId: string): PassiveIncomeSummary =>
             nextDate.setFullYear(t.getFullYear() + (t > nextDate ? 1 : 0));
             
             if (nextDate >= t && nextDate <= endForecastDate) {
-              const dateStr = nextDate.toISOString().split('T')[0];
+              const dateStr = toLocalYmd(nextDate);
               forecast_timeline.push({
                 date: dateStr,
                 amount: prev.amount || 0,
@@ -304,7 +311,7 @@ export const getPassiveIncomeSummary = (userId: string): PassiveIncomeSummary =>
         if (dividend > 1000) { // Only project if dividend is greater than ₹10 (1000 paise)
           const nextAugust15 = new Date(t.getFullYear() + (t.getMonth() >= 7 ? 1 : 0), 7, 15);
           if (nextAugust15 <= endForecastDate) {
-            const dateStr = nextAugust15.toISOString().split('T')[0];
+            const dateStr = toLocalYmd(nextAugust15);
             forecast_timeline.push({
               date: dateStr,
               amount: dividend,
