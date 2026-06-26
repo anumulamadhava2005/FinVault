@@ -87,8 +87,9 @@ export const getPassiveIncomeSummary = (userId: string): PassiveIncomeSummary =>
   // 2. Fetch Received Passive Income from history_events
   // Supported types: 'income', 'dividend', 'interest'
   const historyEvents = all<HistoryEvent & { slug?: string }>(
-    `SELECT h.*, a.slug FROM history_events h
+    `SELECT h.*, t.slug FROM history_events h
      LEFT JOIN assets a ON a.id = h.ref_id
+     LEFT JOIN asset_types t ON t.id = a.asset_type_id
      WHERE h.user_id = ? AND h.category = 'asset'
        AND h.event_type IN ('income', 'dividend', 'interest')
      ORDER BY h.event_date DESC`,
