@@ -185,7 +185,7 @@ const PassiveIncomeScreen: React.FC = () => {
       case 'savings_interest':
         return 'bank';
       default:
-        return 'cash-usd';
+        return 'cash';
     }
   };
 
