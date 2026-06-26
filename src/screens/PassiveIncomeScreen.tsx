@@ -370,7 +370,7 @@ const PassiveIncomeScreen: React.FC = () => {
                     }}
                   >
                     <Card.Content style={{ padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <View style={{ flex: 1, gap: 2 }}>
+                      <View style={{ flex: 1, gap: 2, marginRight: 12 }}>
                         <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
                           {item.asset_name}
                         </Text>
@@ -414,7 +414,7 @@ const PassiveIncomeScreen: React.FC = () => {
                     }}
                   >
                     <Card.Content style={{ padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <View style={{ flex: 1, gap: 2 }}>
+                      <View style={{ flex: 1, gap: 2, marginRight: 12 }}>
                         <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
                           {item.name}
                         </Text>

@@ -249,8 +249,8 @@ export const LineItem: React.FC<{ label: string; value: string; valueColor?: str
   const theme = useTheme();
   return (
     <View style={styles.lineItem}>
-      <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13 }}>{label}</Text>
-      <Text style={{ fontWeight: '600', color: valueColor ?? theme.colors.onSurface, fontSize: 13, fontVariant: ['tabular-nums'] }}>{value}</Text>
+      <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, flex: 1, marginRight: 12 }} numberOfLines={2}>{label}</Text>
+      <Text style={{ fontWeight: '600', color: valueColor ?? theme.colors.onSurface, fontSize: 13, fontVariant: ['tabular-nums'], textAlign: 'right' }}>{value}</Text>
     </View>
   );
 };
