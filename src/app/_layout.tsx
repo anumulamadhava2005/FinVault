@@ -249,6 +249,7 @@ const CustomDrawer = (props: any) => {
           {renderMenuItem('feed', 'Wealth Feed', 'newspaper-variant-outline')}
           {renderMenuItem('assets', 'Assets', 'chart-line')}
           {renderMenuItem('expenses', 'Expenses', 'cash-multiple')}
+          {renderMenuItem('income', 'Passive Income', 'cash-usd')}
           {renderMenuItem('loans', 'Loans', 'bank')}
           {renderMenuItem('goals', 'Goals', 'flag-checkered')}
           {renderMenuItem('recap', 'Wealth Recap', 'calendar-star')}
