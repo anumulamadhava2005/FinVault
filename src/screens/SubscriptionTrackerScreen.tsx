@@ -494,6 +494,7 @@ const SubscriptionTrackerScreen: React.FC = () => {
                 anchor={
                   <Button
                     mode="outlined"
+                    icon="chevron-down"
                     onPress={() => setCategoryMenuOpen(true)}
                     contentStyle={{ justifyContent: 'space-between', flexDirection: 'row-reverse', height: 40 }}
                     style={{ width: '100%', borderRadius: theme.roundness, borderColor: theme.colors.outline }}

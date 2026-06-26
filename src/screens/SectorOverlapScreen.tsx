@@ -265,6 +265,7 @@ const SectorOverlapScreen: React.FC = () => {
                           <Button
                             mode="outlined"
                             compact
+                            icon="chevron-down"
                             onPress={() => setMenu1Open(true)}
                             contentStyle={{ justifyContent: 'space-between', flexDirection: 'row-reverse', height: 40 }}
                             labelStyle={{ fontSize: 11 }}
@@ -299,6 +300,7 @@ const SectorOverlapScreen: React.FC = () => {
                           <Button
                             mode="outlined"
                             compact
+                            icon="chevron-down"
                             onPress={() => setMenu2Open(true)}
                             contentStyle={{ justifyContent: 'space-between', flexDirection: 'row-reverse', height: 40 }}
                             labelStyle={{ fontSize: 11 }}

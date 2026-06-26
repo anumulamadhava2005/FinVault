@@ -214,6 +214,7 @@ const ExpenseRatioScreen: React.FC = () => {
                   <Button
                     mode="outlined"
                     compact
+                    icon="chevron-down"
                     onPress={() => setFundMenuOpen(true)}
                     contentStyle={{ justifyContent: 'space-between', flexDirection: 'row-reverse', height: 40 }}
                     labelStyle={{ fontSize: 12, color: theme.colors.onSurface }}
@@ -318,17 +319,17 @@ const ExpenseRatioScreen: React.FC = () => {
           <TrendLine
             labels={projection.labels}
             datasets={[
-              { data: projection.seriesA, color: theme.colors.primary }, // Direct / Low
-              { data: projection.seriesB, color: theme.colors.outline }, // Regular / High
+              { data: projection.seriesA, color: palette.good }, // Direct / Low
+              { data: projection.seriesB, color: palette.danger }, // Regular / High
             ]}
           />
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: theme.colors.primary }} />
+              <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette.good }} />
               <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Low Fee Growth</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 12, height: 12, borderRadius: 2, borderStyle: 'dashed', borderWidth: 1.5, borderColor: theme.colors.outline }} />
+              <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette.danger }} />
               <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>High Fee Growth</Text>
             </View>
           </View>

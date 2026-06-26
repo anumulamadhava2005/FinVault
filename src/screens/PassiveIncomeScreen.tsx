@@ -487,6 +487,7 @@ const PassiveIncomeScreen: React.FC = () => {
                 anchor={
                   <Button
                     mode="outlined"
+                    icon="chevron-down"
                     onPress={() => setAssetMenuOpen(true)}
                     contentStyle={{ justifyContent: 'space-between', flexDirection: 'row-reverse' }}
                     style={{ width: '100%', borderColor: theme.colors.outline }}
