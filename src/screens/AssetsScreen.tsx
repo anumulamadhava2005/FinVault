@@ -535,6 +535,9 @@ const AssetsScreen: React.FC = () => {
                   <Button compact mode="text" icon="file-upload-outline" onPress={() => setImportOpen(true)}>
                     Import
                   </Button>
+                  <Button compact mode="text" icon="file-pdf-box" onPress={() => router.push('/cas-import')}>
+                    Import CAS
+                  </Button>
                   <Button
                     mode="text"
                     compact
