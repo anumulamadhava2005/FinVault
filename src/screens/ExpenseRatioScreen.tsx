@@ -312,35 +312,33 @@ const ExpenseRatioScreen: React.FC = () => {
               />
             </Row>
 
-            <Row gap={10} style={{ alignItems: 'center' }}>
-              <TextInput
-                label="Expected Return Rate (%)"
-                value={returnRateStr}
-                onChangeText={setReturnRateStr}
-                keyboardType="numeric"
-                mode="outlined"
-                dense
-                style={{ flex: 1, backgroundColor: theme.colors.surface }}
+            <TextInput
+              label="Expected Return Rate (%)"
+              value={returnRateStr}
+              onChangeText={setReturnRateStr}
+              keyboardType="numeric"
+              mode="outlined"
+              dense
+              style={{ backgroundColor: theme.colors.surface }}
+            />
+            <View>
+              <Text variant="labelSmall" style={{ fontWeight: '700', color: theme.colors.onSurfaceVariant, marginBottom: 4 }}>
+                Investment Horizon
+              </Text>
+              <SegmentedButtons
+                value={horizon}
+                onValueChange={(v) => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setHorizon(v as any);
+                }}
+                buttons={[
+                  { value: '10', label: '10 Yrs', labelStyle: { fontSize: 10, fontWeight: '600' } },
+                  { value: '20', label: '20 Yrs', labelStyle: { fontSize: 10, fontWeight: '600' } },
+                  { value: '30', label: '30 Yrs', labelStyle: { fontSize: 10, fontWeight: '600' } },
+                ]}
+                style={{ height: 40 }}
               />
-              <View style={{ flex: 1 }}>
-                <Text variant="labelSmall" style={{ fontWeight: '700', color: theme.colors.onSurfaceVariant, marginBottom: 4 }}>
-                  Investment Horizon
-                </Text>
-                <SegmentedButtons
-                  value={horizon}
-                  onValueChange={(v) => {
-                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                    setHorizon(v as any);
-                  }}
-                  buttons={[
-                    { value: '10', label: '10 Yrs', labelStyle: { fontSize: 10, fontWeight: '600' } },
-                    { value: '20', label: '20 Yrs', labelStyle: { fontSize: 10, fontWeight: '600' } },
-                    { value: '30', label: '30 Yrs', labelStyle: { fontSize: 10, fontWeight: '600' } },
-                  ]}
-                  style={{ height: 40 }}
-                />
-              </View>
-            </Row>
+            </View>
           </View>
         </SectionCard>
 
