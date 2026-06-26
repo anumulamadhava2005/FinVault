@@ -226,7 +226,10 @@ const BenchmarkComparisonScreen: React.FC = () => {
           </Text>
           <TrendLine
             labels={comp.growth_chart.map((pt) => pt.label)}
-            legend={['Portfolio', comp.benchmark_name]}
+            legend={[
+              scope === 'overall' ? 'Portfolio' : 'Equity',
+              comp.benchmark_type === 'blended' ? 'Blended Bench' : comp.benchmark_name
+            ]}
             datasets={[
               { data: comp.growth_chart.map((pt) => pt.portfolio_val), color: alphaColor },
               { data: comp.growth_chart.map((pt) => pt.benchmark_val), color: theme.colors.onSurfaceVariant },
