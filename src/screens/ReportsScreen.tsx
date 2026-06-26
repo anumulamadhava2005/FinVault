@@ -59,6 +59,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'benchmark', label: 'Benchmark Allocation Audit' },
   { key: 'benchmark_nifty', label: 'Benchmark vs Nifty Audit' },
   { key: 'tax', label: 'Capital Gains Audit' },
+  { key: 'expense_ratio', label: 'Expense Ratio Analyzer' },
   { key: 'passive_income', label: 'Passive Income & Forecast' },
   { key: 'sector', label: 'Sector Overlap Analysis' },
 ];
@@ -281,6 +282,48 @@ const makeTrendLineSvg = (expSeries: { labels: string[]; income: number[]; expen
 
   svg += `</svg>`;
   return svg;
+};
+
+const runCompounding = (
+  curVal: number,
+  sip: number,
+  returnRate: number,
+  ratioA: number,
+  ratioB: number,
+  years: number,
+) => {
+  const rateA = (returnRate - ratioA) / 100;
+  const rateB = (returnRate - ratioB) / 100;
+
+  const lumpA = curVal * Math.pow(1 + rateA, years);
+  const lumpB = curVal * Math.pow(1 + rateB, years);
+
+  let sipA = 0;
+  let sipB = 0;
+  if (sip > 0 && years > 0) {
+    const rMonthlyA = rateA / 12;
+    const rMonthlyB = rateB / 12;
+    const months = years * 12;
+
+    if (rMonthlyA > 0) {
+      sipA = sip * ((Math.pow(1 + rMonthlyA, months) - 1) / rMonthlyA) * (1 + rMonthlyA);
+    } else {
+      sipA = sip * months;
+    }
+
+    if (rMonthlyB > 0) {
+      sipB = sip * ((Math.pow(1 + rMonthlyB, months) - 1) / rMonthlyB) * (1 + rMonthlyB);
+    } else {
+      sipB = sip * months;
+    }
+  }
+
+  const finalA = Math.round(lumpA + sipA);
+  const finalB = Math.round(lumpB + sipB);
+  const savings = finalA - finalB;
+  const dragPct = finalA > 0 ? (savings / finalA) * 100 : 0;
+
+  return { finalA, finalB, savings, dragPct };
 };
 
 /** Compiles HTML file containing report tables and charts. */
@@ -996,6 +1039,158 @@ const buildHtmlReport = async (
     `;
   }
 
+  let expenseRatioHtml = '';
+  if (selected.expense_ratio) {
+    const mutualFunds = all<Asset>(
+      `SELECT a.* FROM assets a
+       JOIN asset_types t ON t.id = a.asset_type_id
+       WHERE a.user_id = ? AND t.slug = 'mutual_fund' AND a.current_value > 0`,
+      [userId!]
+    );
+
+    const mfs = mutualFunds.map((a) => {
+      let ter = 1.65;
+      try {
+        const details = a.details_json ? JSON.parse(a.details_json) : null;
+        if (details && details.expense_ratio != null && !isNaN(parseFloat(details.expense_ratio))) {
+          ter = parseFloat(details.expense_ratio);
+        }
+      } catch { /* ignore */ }
+      return { ...a, ter };
+    });
+
+    const totalMfValue = mfs.reduce((sum, f) => sum + f.current_value, 0) / 100;
+    const totalMfSip = mfs.reduce((sum, f) => sum + (f.is_sip ? f.sip_monthly_amount : 0), 0) / 100;
+    const isHypothetical = totalMfValue === 0;
+    const simCurVal = isHypothetical ? 500000 : totalMfValue;
+    const simSip = isHypothetical ? 15000 : totalMfSip;
+
+    const proj10 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 10);
+    const proj20 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 20);
+    const proj30 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 30);
+
+    const avgTer = mfs.length > 0
+      ? mfs.reduce((sum, f) => sum + (f.ter * f.current_value), 0) / mfs.reduce((sum, f) => sum + f.current_value, 0)
+      : 1.65;
+    const annualFeeDrag = mfs.reduce((sum, f) => sum + (f.current_value * (f.ter / 100)), 0) / 100;
+    const potentialAnnualSavings = mfs.reduce((sum, f) => sum + (f.current_value * (Math.max(0, f.ter - 0.12) / 100)), 0) / 100;
+
+    let fundAuditRows = '';
+    if (mfs.length > 0) {
+      fundAuditRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Your Mutual Fund Fee Audit</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Fund Name</th>
+              <th class="text-right">Current Value</th>
+              <th class="text-right">Expense Ratio</th>
+              <th class="text-right">Est. Annual Fee</th>
+              <th class="text-right">Switch Savings (Direct)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${mfs.map(f => {
+              const fee = (f.current_value * (f.ter / 100)) / 100;
+              const savings = (f.current_value * (Math.max(0, f.ter - 0.12) / 100)) / 100;
+              const isHigh = f.ter >= 1.0;
+              return `
+                <tr>
+                  <td><strong>${f.name}</strong></td>
+                  <td class="text-right">${formatINR(f.current_value)}</td>
+                  <td class="text-right">${f.ter.toFixed(2)}%</td>
+                  <td class="text-right">${formatINR(fee * 100)}</td>
+                  <td class="text-right" style="color: ${savings > 0 ? '#10b981' : '#6b7280'}; font-weight: 600;">
+                    ${savings > 0 ? formatINR(savings * 100) : '—'}
+                  </td>
+                  <td>
+                    <span class="badge badge-${isHigh ? 'bad' : 'good'}">
+                      ${isHigh ? 'High Fee' : 'Low Fee'}
+                    </span>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    expenseRatioHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Expense Ratio Analyzer & Fee Audit</div>
+        
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Mutual Fund Value</div>
+            <div class="kpi-value">${formatINR(totalMfValue * 100)}</div>
+            <div class="kpi-sub">${mfs.length} Active Funds</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #f59e0b;">
+            <div class="kpi-label">Weighted Avg. Fee</div>
+            <div class="kpi-value">${avgTer.toFixed(2)}%</div>
+            <div class="kpi-sub">Portfolio Expense Ratio</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #ef4444;">
+            <div class="kpi-label">Annual Fee Drag</div>
+            <div class="kpi-value">${formatINR(annualFeeDrag * 100)}</div>
+            <div class="kpi-sub">Estimated annual fees paid</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Direct Plan Savings</div>
+            <div class="kpi-value">${formatINR(potentialAnnualSavings * 100)}</div>
+            <div class="kpi-sub">Savings by switching to Direct</div>
+          </div>
+        </div>
+
+        <div style="padding: 12px; border: 1px solid #86efac; border-radius: 6px; background-color: #f0fdf4; color: #15803d; font-size: 11.5px; line-height: 17px; margin-bottom: 15px;">
+          <strong>Actionable Wealth Insight:</strong> Switching to a lower expense ratio fund (Direct Plan) could save approximately <strong>${formatINR(proj20.savings * 100)}</strong> over 20 years. Mutual fund fees compound silently and eat away at your long-term wealth. Switching from a Regular plan (avg. 1.65% fee) to a Direct plan (avg. 0.12% fee) saves massive amounts of money.
+        </div>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px;">
+          Long-Term Compounding Fee Drag Projections ${isHypothetical ? '(Hypothetical Simulation: ₹5L lump + ₹15k/mo SIP)' : `(Based on your actual portfolio: ${formatINR(simCurVal * 100)} lump + ${formatINR(simSip * 100)}/mo SIP)`}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Horizon (Years)</th>
+              <th class="text-right">Low Fee Value (0.12% TER)</th>
+              <th class="text-right">High Fee Value (1.65% TER)</th>
+              <th class="text-right" style="color: #ef4444;">Wealth Lost to Fees</th>
+              <th class="text-right">Fee Drag (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>10 Years</strong></td>
+              <td class="text-right">${formatINR(proj10.finalA * 100)}</td>
+              <td class="text-right">${formatINR(proj10.finalB * 100)}</td>
+              <td class="text-right" style="color: #ef4444; font-weight: 600;">${formatINR(proj10.savings * 100)}</td>
+              <td class="text-right" style="font-weight: bold; color: #ef4444;">${proj10.dragPct.toFixed(1)}%</td>
+            </tr>
+            <tr>
+              <td><strong>20 Years</strong></td>
+              <td class="text-right">${formatINR(proj20.finalA * 100)}</td>
+              <td class="text-right">${formatINR(proj20.finalB * 100)}</td>
+              <td class="text-right" style="color: #ef4444; font-weight: 600;">${formatINR(proj20.savings * 100)}</td>
+              <td class="text-right" style="font-weight: bold; color: #ef4444;">${proj20.dragPct.toFixed(1)}%</td>
+            </tr>
+            <tr>
+              <td><strong>30 Years</strong></td>
+              <td class="text-right">${formatINR(proj30.finalA * 100)}</td>
+              <td class="text-right">${formatINR(proj30.finalB * 100)}</td>
+              <td class="text-right" style="color: #ef4444; font-weight: 600;">${formatINR(proj30.savings * 100)}</td>
+              <td class="text-right" style="font-weight: bold; color: #ef4444;">${proj30.dragPct.toFixed(1)}%</td>
+            </tr>
+          </tbody>
+        </table>
+
+        ${fundAuditRows}
+      </div>
+    `;
+  }
+
   let passiveIncomeHtml = '';
   if (selected.passive_income) {
     const pi = getPassiveIncomeSummary(userId);
@@ -1374,6 +1569,7 @@ const buildHtmlReport = async (
       ${protectHtml}
       ${goalsHtml}
       ${taxHtml}
+      ${expenseRatioHtml}
       ${passiveIncomeHtml}
       ${sectorHtml}
       ${vaultHtml}
@@ -1414,6 +1610,7 @@ const ReportsScreen: React.FC = () => {
     benchmark: true,
     benchmark_nifty: true,
     tax: true,
+    expense_ratio: true,
     passive_income: true,
     sector: true,
   });
@@ -1519,6 +1716,63 @@ const ReportsScreen: React.FC = () => {
       lines.push(`Combined Total Gains: ${formatINR(tax.grand_total)}`);
       if (tax.harvest_alert.alert_text) {
         lines.push(`Recommendation: ${tax.harvest_alert.alert_text}`);
+      }
+      lines.push('');
+    }
+    if (selected.expense_ratio) {
+      lines.push('— Expense Ratio Analyzer & Fee Audit —');
+      const mutualFunds = all<Asset>(
+        `SELECT a.* FROM assets a
+         JOIN asset_types t ON t.id = a.asset_type_id
+         WHERE a.user_id = ? AND t.slug = 'mutual_fund' AND a.current_value > 0`,
+        [userId!]
+      );
+
+      const mfs = mutualFunds.map((a) => {
+        let ter = 1.65;
+        try {
+          const details = a.details_json ? JSON.parse(a.details_json) : null;
+          if (details && details.expense_ratio != null && !isNaN(parseFloat(details.expense_ratio))) {
+            ter = parseFloat(details.expense_ratio);
+          }
+        } catch { /* ignore */ }
+        return { ...a, ter };
+      });
+
+      const totalMfValue = mfs.reduce((sum, f) => sum + f.current_value, 0) / 100;
+      const totalMfSip = mfs.reduce((sum, f) => sum + (f.is_sip ? f.sip_monthly_amount : 0), 0) / 100;
+      const isHypothetical = totalMfValue === 0;
+      const simCurVal = isHypothetical ? 500000 : totalMfValue;
+      const simSip = isHypothetical ? 15000 : totalMfSip;
+
+      const avgTer = mfs.length > 0
+        ? mfs.reduce((sum, f) => sum + (f.ter * f.current_value), 0) / mfs.reduce((sum, f) => sum + f.current_value, 0)
+        : 1.65;
+      const annualFeeDrag = mfs.reduce((sum, f) => sum + (f.current_value * (f.ter / 100)), 0) / 100;
+      const potentialAnnualSavings = mfs.reduce((sum, f) => sum + (f.current_value * (Math.max(0, f.ter - 0.12) / 100)), 0) / 100;
+
+      lines.push(`Total Mutual Fund Value: ${formatINR(totalMfValue * 100)}`);
+      lines.push(`Weighted Average Expense Ratio: ${avgTer.toFixed(2)}%`);
+      lines.push(`Estimated Annual Fee Drag: ${formatINR(annualFeeDrag * 100)}`);
+      lines.push(`Potential Annual Direct Plan Savings: ${formatINR(potentialAnnualSavings * 100)}`);
+
+      const proj10 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 10);
+      const proj20 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 20);
+      const proj30 = runCompounding(simCurVal, simSip, 12, 0.12, 1.65, 30);
+
+      lines.push(`Compounding Projections (${isHypothetical ? 'Hypothetical 5L lump + 15k/mo SIP' : 'Based on your actual portfolio'}):`);
+      lines.push(`  • 10 Years: Direct ${formatINR(proj10.finalA * 100)} vs Regular ${formatINR(proj10.finalB * 100)} (Wealth lost: ${formatINR(proj10.savings * 100)}, Drag: ${proj10.dragPct.toFixed(1)}%)`);
+      lines.push(`  • 20 Years: Direct ${formatINR(proj20.finalA * 100)} vs Regular ${formatINR(proj20.finalB * 100)} (Wealth lost: ${formatINR(proj20.savings * 100)}, Drag: ${proj20.dragPct.toFixed(1)}%)`);
+      lines.push(`  • 30 Years: Direct ${formatINR(proj30.finalA * 100)} vs Regular ${formatINR(proj30.finalB * 100)} (Wealth lost: ${formatINR(proj30.savings * 100)}, Drag: ${proj30.dragPct.toFixed(1)}%)`);
+      
+      lines.push(`Recommendation: Switching to a lower expense ratio fund (Direct Plan) could save approximately ${formatINR(proj20.savings * 100)} over 20 years.`);
+      
+      if (mfs.length > 0) {
+        lines.push('Fund-by-Fund Fee Audit:');
+        mfs.forEach(f => {
+          const savings = (f.current_value * (Math.max(0, f.ter - 0.12) / 100)) / 100;
+          lines.push(`  • ${f.name}: ${f.ter.toFixed(2)}% Expense · Value: ${formatINR(f.current_value)}${savings > 0 ? ` · Potential Savings: ${formatINR(savings * 100)}/yr` : ''}`);
+        });
       }
       lines.push('');
     }

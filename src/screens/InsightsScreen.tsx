@@ -354,6 +354,15 @@ const InsightsScreen: React.FC = () => {
         {cost.rows.length === 0 && (
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>No fee-bearing funds detected. Add an expense ratio to a fund's details to track its cost.</Text>
         )}
+        <Divider style={{ marginTop: 14, marginBottom: 12, opacity: 0.5 }} />
+        <Button
+          mode="outlined"
+          icon="calculator"
+          onPress={() => router.push('/expense-ratio' as any)}
+          style={{ borderRadius: theme.roundness }}
+        >
+          Expense Ratio Analyzer
+        </Button>
       </SectionCard>
 
       {/* ── Hold / Exit suggestions ── */}
