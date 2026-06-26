@@ -78,35 +78,31 @@ const BenchmarkComparisonScreen: React.FC = () => {
             style={{ marginBottom: 16 }}
           />
 
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', marginBottom: 6, letterSpacing: 0.5 }}>
-                PORTFOLIO SCOPE
-              </Text>
-              <SegmentedButtons
-                value={scope}
-                onValueChange={(val) => setScope(val as any)}
-                buttons={[
-                  { value: 'overall', label: 'Overall' },
-                  { value: 'equity', label: 'Equity Only' },
-                ]}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', marginBottom: 6, letterSpacing: 0.5 }}>
-                TIME HORIZON
-              </Text>
-              <SegmentedButtons
-                value={timeframe}
-                onValueChange={(val) => setTimeframe(val as any)}
-                buttons={[
-                  { value: '1Y', label: '1 Year' },
-                  { value: '3Y', label: '3 Years' },
-                  { value: 'All', label: 'All Time' },
-                ]}
-              />
-            </View>
-          </View>
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', marginBottom: 6, marginTop: 4, letterSpacing: 0.5 }}>
+            PORTFOLIO SCOPE
+          </Text>
+          <SegmentedButtons
+            value={scope}
+            onValueChange={(val) => setScope(val as any)}
+            buttons={[
+              { value: 'overall', label: 'Overall' },
+              { value: 'equity', label: 'Equity Only' },
+            ]}
+            style={{ marginBottom: 16 }}
+          />
+
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', marginBottom: 6, letterSpacing: 0.5 }}>
+            TIME HORIZON
+          </Text>
+          <SegmentedButtons
+            value={timeframe}
+            onValueChange={(val) => setTimeframe(val as any)}
+            buttons={[
+              { value: '1Y', label: '1 Year' },
+              { value: '3Y', label: '3 Years' },
+              { value: 'All', label: 'All Time' },
+            ]}
+          />
         </SectionCard>
 
         {/* 2. Scoreboard Row */}
