@@ -250,6 +250,42 @@ export const seedDemoData = (db: SQLiteDatabase, userId: string, masterPassword?
       })
     );
 
+    // ── HISTORICAL SIP PAYMENTS (seeded to match mutual fund invested amounts) ──
+    const seedSipPayments = (assetId: string, amount: number, day: number, startYear: number, startMonth: number, count: number) => {
+      let y = startYear;
+      let m = startMonth;
+      for (let i = 0; i < count; i++) {
+        const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        ins('sip_payments', {
+          id: uid(),
+          user_id: userId,
+          asset_id: assetId,
+          scheduled_date: dateStr,
+          actual_date: dateStr,
+          amount,
+          status: 'paid',
+          created_at: dateStr + 'T09:00:00.000Z',
+        });
+        m++;
+        if (m > 12) {
+          m = 1;
+          y++;
+        }
+      }
+    };
+
+    // Seed Axis Bluechip SIP: 8 months from May 2024 (May 2024 to Dec 2024)
+    seedSipPayments(aAxisBlue, R(5000), 5, 2024, 5, 8);
+
+    // Seed Nippon Mid Cap SIP: 20 months from May 2024 (May 2024 to Dec 2025)
+    seedSipPayments(aNipponMid, R(10000), 10, 2024, 5, 20);
+
+    // Seed PPFAS Flexi Cap SIP: 11 months from Aug 2024 (Aug 2024 to Jun 2025)
+    seedSipPayments(aPpfas, R(3000), 1, 2024, 8, 11);
+
+    // Seed Mirae ELSS Tax Saver SIP: 10 months from Aug 2024 (Aug 2024 to May 2025)
+    seedSipPayments(aMirae, R(2000), 15, 2024, 8, 10);
+
     // ── GOALS ─────────────────────────────────────────────────────────────
     const G = (name: string, type: string, target: number, date: string) => {
       const id = uid();
