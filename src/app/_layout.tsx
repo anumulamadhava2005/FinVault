@@ -55,6 +55,7 @@ const CustomDrawer = (props: any) => {
     { section: 'FINANCES', route: 'assets', label: 'Assets', icon: 'chart-line' },
     { section: 'FINANCES', route: 'expenses', label: 'Expenses', icon: 'cash-multiple' },
     { section: 'FINANCES', route: 'income', label: 'Passive Income', icon: 'cash' },
+    { section: 'FINANCES', route: 'sector', label: 'Sector Overlap', icon: 'chart-pie' },
     { section: 'FINANCES', route: 'loans', label: 'Loans', icon: 'bank' },
     { section: 'FINANCES', route: 'goals', label: 'Goals', icon: 'flag-checkered' },
     { section: 'FINANCES', route: 'recap', label: 'Wealth Recap', icon: 'calendar-star' },
@@ -250,6 +251,7 @@ const CustomDrawer = (props: any) => {
           {renderMenuItem('assets', 'Assets', 'chart-line')}
           {renderMenuItem('expenses', 'Expenses', 'cash-multiple')}
           {renderMenuItem('income', 'Passive Income', 'cash')}
+          {renderMenuItem('sector', 'Sector Overlap', 'chart-pie')}
           {renderMenuItem('loans', 'Loans', 'bank')}
           {renderMenuItem('goals', 'Goals', 'flag-checkered')}
           {renderMenuItem('recap', 'Wealth Recap', 'calendar-star')}
@@ -1173,6 +1175,7 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="assets" options={{ title: 'Assets', drawerIcon: drawerIcon('chart-line'), headerShown: false }} />
         <Drawer.Screen name="expenses" options={{ title: 'Expenses', drawerIcon: drawerIcon('cash-multiple') }} />
         <Drawer.Screen name="income" options={{ title: 'Passive Income', drawerIcon: drawerIcon('cash') }} />
+        <Drawer.Screen name="sector" options={{ title: 'Sector Overlap', drawerIcon: drawerIcon('chart-pie') }} />
         <Drawer.Screen name="loans" options={{ title: 'Loans', drawerIcon: drawerIcon('bank') }} />
         <Drawer.Screen name="protect" options={{ title: 'Protect', drawerIcon: drawerIcon('shield-check') }} />
         <Drawer.Screen name="goals" options={{ title: 'Goals', drawerIcon: drawerIcon('flag-checkered'), headerShown: false }} />

@@ -42,6 +42,7 @@ import {
 import { capitalGains } from '../services/taxService';
 import { getBenchmarkComparison } from '../services/benchmarkService';
 import { getPassiveIncomeSummary } from '../services/passiveIncomeService';
+import { getSectorOverlapAnalysis } from '../services/sectorService';
 import { chartColors, palette } from '../theme';
 import { todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
@@ -59,6 +60,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'benchmark_nifty', label: 'Benchmark vs Nifty Audit' },
   { key: 'tax', label: 'Capital Gains Audit' },
   { key: 'passive_income', label: 'Passive Income & Forecast' },
+  { key: 'sector', label: 'Sector Overlap Analysis' },
 ];
 
 // Base64 helper tables and encoders/decoders for Hermes/React Native compatibility
@@ -1072,6 +1074,98 @@ const buildHtmlReport = async (
     `;
   }
 
+  let sectorHtml = '';
+  if (selected.sector) {
+    const s = getSectorOverlapAnalysis(userId);
+    let sectorRows = '';
+    if (s.sector_allocation.length > 0) {
+      sectorRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 10px;">True Sector Breakdown</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Sector Name</th>
+              <th class="text-right">Exposure Value</th>
+              <th class="text-right">Allocation</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${s.sector_allocation.map(item => `
+              <tr>
+                <td><strong>${item.sector}</strong></td>
+                <td class="text-right">${formatINR(item.amount)}</td>
+                <td class="text-right" style="font-weight: 600; color: #111827;">${item.pct}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    let stockRows = '';
+    if (s.stock_concentration.length > 0) {
+      stockRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Top Consolidated Company Exposures</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Stock / Holding</th>
+              <th class="text-right">Direct Exposure</th>
+              <th class="text-right">Indirect Exposure</th>
+              <th class="text-right">Total Exposure</th>
+              <th class="text-right">Allocation</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${s.stock_concentration.map(item => `
+              <tr>
+                <td><strong>${item.stock}</strong></td>
+                <td class="text-right">${item.direct > 0 ? formatINR(item.direct) : '—'}</td>
+                <td class="text-right">${item.indirect > 0 ? formatINR(item.indirect) : '—'}</td>
+                <td class="text-right" style="font-weight: 600; color: #1f2937;">${formatINR(item.total)}</td>
+                <td class="text-right" style="font-weight: 700; color: #3b82f6;">${item.pct}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    let alertHtml = '';
+    if (s.alerts.length > 0) {
+      alertHtml = `
+        <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 8px;">
+          ${s.alerts.map(alert => `
+            <div style="padding: 10px 12px; border: 1px solid #fca5a5; border-radius: 6px; background-color: #fef2f2; color: #991b1b; font-size: 11px; line-height: 16px; page-break-inside: avoid;">
+              <strong>Concentration Warning:</strong> ${alert.title} &bull; ${alert.text}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    sectorHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Sector Overlap & Concentration Audit</div>
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Equity Portfolio Value</div>
+            <div class="kpi-value">${formatINR(s.total_equity_value)}</div>
+            <div class="kpi-sub">Total Stocks & Mutual Funds</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Sectors Covered</div>
+            <div class="kpi-value">${s.sector_allocation.length} Sectors</div>
+            <div class="kpi-sub">Equity Diversification</div>
+          </div>
+        </div>
+        ${sectorRows}
+        ${stockRows}
+        ${alertHtml}
+      </div>
+    `;
+  }
+
   return `
     <!DOCTYPE html>
     <html>
@@ -1281,6 +1375,7 @@ const buildHtmlReport = async (
       ${goalsHtml}
       ${taxHtml}
       ${passiveIncomeHtml}
+      ${sectorHtml}
       ${vaultHtml}
     </body>
     </html>
@@ -1306,6 +1401,7 @@ const ReportsScreen: React.FC = () => {
   const tax = useData(() => capitalGains(userId!));
   const benchmarkNifty = useData(() => getBenchmarkComparison(userId!, 'nifty'));
   const passiveIncome = useData(() => getPassiveIncomeSummary(userId!));
+  const sectorAnalysis = useData(() => getSectorOverlapAnalysis(userId!));
  
   const [selected, setSelected] = useState<Record<string, boolean>>({
     assets: true,
@@ -1319,6 +1415,7 @@ const ReportsScreen: React.FC = () => {
     benchmark_nifty: true,
     tax: true,
     passive_income: true,
+    sector: true,
   });
   const [snack, setSnack] = useState('');
   const allOn = MODULES.every((m) => selected[m.key]);
@@ -1431,6 +1528,23 @@ const ReportsScreen: React.FC = () => {
       lines.push(`Projected (Next 12M): ${formatINR(passiveIncome.forecasted_12m)}`);
       if (passiveIncome.next_payout) {
         lines.push(`Next Expected: ${formatINR(passiveIncome.next_payout.amount)} on ${passiveIncome.next_payout.date} (${passiveIncome.next_payout.type_label})`);
+      }
+      lines.push('');
+    }
+    if (selected.sector) {
+      lines.push('— Sector Overlap & Concentration —');
+      lines.push(`Total Equity Value: ${formatINR(sectorAnalysis.total_equity_value)}`);
+      if (sectorAnalysis.sector_allocation.length > 0) {
+        lines.push('Sector Allocation:');
+        sectorAnalysis.sector_allocation.forEach((s) => lines.push(`  • ${s.sector}: ${s.pct}% (${formatINR(s.amount)})`));
+      }
+      if (sectorAnalysis.stock_concentration.length > 0) {
+        lines.push('Top Consolidated Stock Exposures:');
+        sectorAnalysis.stock_concentration.forEach((st) => lines.push(`  • ${st.stock}: ${st.pct}% (${formatINR(st.total)})`));
+      }
+      if (sectorAnalysis.alerts.length > 0) {
+        lines.push('Concentration Warnings:');
+        sectorAnalysis.alerts.forEach((alert) => lines.push(`  • ${alert.title}: ${alert.text}`));
       }
       lines.push('');
     }
