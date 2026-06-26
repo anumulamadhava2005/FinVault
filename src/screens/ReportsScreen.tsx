@@ -40,6 +40,7 @@ import {
   benchmarkComparison,
 } from '../services/finance';
 import { capitalGains } from '../services/taxService';
+import { getBenchmarkComparison } from '../services/benchmarkService';
 import { chartColors, palette } from '../theme';
 import { todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
@@ -54,6 +55,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'health', label: 'Financial Health Audit' },
   { key: 'password', label: 'Password Health Audit' },
   { key: 'benchmark', label: 'Benchmark Allocation Audit' },
+  { key: 'benchmark_nifty', label: 'Benchmark vs Nifty Audit' },
   { key: 'tax', label: 'Capital Gains Audit' },
 ];
 
@@ -595,6 +597,86 @@ const buildHtmlReport = async (
     `;
   }
 
+  let benchmarkNiftyHtml = '';
+  if (selected.benchmark_nifty) {
+    const bn = getBenchmarkComparison(userId, 'nifty');
+    const pAll = bn.periods.find((p) => p.period === 'All') || bn.periods[2];
+    const p3Y = bn.periods.find((p) => p.period === '3Y') || bn.periods[1];
+    const p1Y = bn.periods.find((p) => p.period === '1Y') || bn.periods[0];
+    
+    const alphaTone = (val: number | null) => (val != null && val >= 0) ? '#10b981' : '#ef4444';
+    
+    benchmarkNiftyHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Benchmark vs Nifty Audit</div>
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Portfolio XIRR</div>
+            <div class="kpi-value">${pAll.portfolio_return != null ? `${pAll.portfolio_return}%` : '—'}</div>
+            <div class="kpi-sub">All-Time Annualized</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Nifty 50 Return</div>
+            <div class="kpi-value">${pAll.benchmark_return}%</div>
+            <div class="kpi-sub">Index All-Time Return</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #8b5cf6;">
+            <div class="kpi-label">Generated Alpha</div>
+            <div class="kpi-value" style="color: ${alphaTone(pAll.alpha)};">${pAll.alpha != null ? `${pAll.alpha > 0 ? '+' : ''}${pAll.alpha}%` : '—'}</div>
+            <div class="kpi-sub">${(pAll.alpha != null && pAll.alpha >= 0) ? 'Outperforming' : 'Underperforming'}</div>
+          </div>
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Horizon</th>
+              <th class="text-right">Portfolio Return</th>
+              <th class="text-right">Equity-Only Return</th>
+              <th class="text-right">Nifty 50 Return</th>
+              <th class="text-right">Portfolio Alpha</th>
+              <th class="text-right">Equity Alpha</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1 Year Horizon</strong></td>
+              <td class="text-right">${p1Y.portfolio_return != null ? `${p1Y.portfolio_return}%` : '—'}</td>
+              <td class="text-right">${p1Y.equity_return != null ? `${p1Y.equity_return}%` : '—'}</td>
+              <td class="text-right">${p1Y.benchmark_return}%</td>
+              <td class="text-right" style="color: ${alphaTone(p1Y.alpha)}; font-weight: bold;">${p1Y.alpha != null ? `${p1Y.alpha > 0 ? '+' : ''}${p1Y.alpha}%` : '—'}</td>
+              <td class="text-right" style="color: ${alphaTone(p1Y.equity_alpha)}; font-weight: bold;">${p1Y.equity_alpha != null ? `${p1Y.equity_alpha > 0 ? '+' : ''}${p1Y.equity_alpha}%` : '—'}</td>
+            </tr>
+            <tr>
+              <td><strong>3 Years Horizon</strong></td>
+              <td class="text-right">${p3Y.portfolio_return != null ? `${p3Y.portfolio_return}%` : '—'}</td>
+              <td class="text-right">${p3Y.equity_return != null ? `${p3Y.equity_return}%` : '—'}</td>
+              <td class="text-right">${p3Y.benchmark_return}%</td>
+              <td class="text-right" style="color: ${alphaTone(p3Y.alpha)}; font-weight: bold;">${p3Y.alpha != null ? `${p3Y.alpha > 0 ? '+' : ''}${p3Y.alpha}%` : '—'}</td>
+              <td class="text-right" style="color: ${alphaTone(p3Y.equity_alpha)}; font-weight: bold;">${p3Y.equity_alpha != null ? `${p3Y.equity_alpha > 0 ? '+' : ''}${p3Y.equity_alpha}%` : '—'}</td>
+            </tr>
+            <tr>
+              <td><strong>All Time Horizon</strong></td>
+              <td class="text-right">${pAll.portfolio_return != null ? `${pAll.portfolio_return}%` : '—'}</td>
+              <td class="text-right">${pAll.equity_return != null ? `${pAll.equity_return}%` : '—'}</td>
+              <td class="text-right">${pAll.benchmark_return}%</td>
+              <td class="text-right" style="color: ${alphaTone(pAll.alpha)}; font-weight: bold;">${pAll.alpha != null ? `${pAll.alpha > 0 ? '+' : ''}${pAll.alpha}%` : '—'}</td>
+              <td class="text-right" style="color: ${alphaTone(pAll.equity_alpha)}; font-weight: bold;">${pAll.equity_alpha != null ? `${pAll.equity_alpha > 0 ? '+' : ''}${pAll.equity_alpha}%` : '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <div style="margin-top: 15px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; background-color: #f9fafb; font-size: 11px; line-height: 16px;">
+          <strong>Market Comparison Insight:</strong> 
+          ${(pAll.alpha != null && pAll.alpha >= 0)
+            ? `Your portfolio is successfully outperforming the index with a positive alpha of <strong>${pAll.alpha}%</strong>. This demonstrates strong asset selection and effective risk balancing.`
+            : `Your portfolio is currently lagging the index by <strong>${Math.abs(pAll.alpha || 0)}%</strong>. Consider auditing your underperforming mutual funds or individual stock holdings to optimize returns.`
+          }
+        </div>
+      </div>
+    `;
+  }
+
   let loansHtml = '';
   if (selected.loans) {
     const loans = all<Loan>('SELECT * FROM loans WHERE user_id=?', [userId!]);
@@ -1110,6 +1192,7 @@ const buildHtmlReport = async (
 
       ${healthHtml}
       ${benchmarkHtml}
+      ${benchmarkNiftyHtml}
       ${passwordHtml}
       ${assetsHtml}
       ${sipHtml}
@@ -1140,6 +1223,7 @@ const ReportsScreen: React.FC = () => {
   const benchmark = useData(() => benchmarkComparison(userId!));
   const goals = useData(() => goalsProgress(userId!));
   const tax = useData(() => capitalGains(userId!));
+  const benchmarkNifty = useData(() => getBenchmarkComparison(userId!, 'nifty'));
 
   const [selected, setSelected] = useState<Record<string, boolean>>({
     assets: true,
@@ -1150,6 +1234,7 @@ const ReportsScreen: React.FC = () => {
     health: true,
     password: true,
     benchmark: true,
+    benchmark_nifty: true,
     tax: true,
   });
   const [snack, setSnack] = useState('');
@@ -1188,6 +1273,16 @@ const ReportsScreen: React.FC = () => {
         const diff = Number((r.actual - r.recommended).toFixed(1));
         lines.push(`  • ${r.type}: Actual ${r.actual}% vs Rec ${r.recommended}% (Diff: ${diff > 0 ? `+${diff}` : diff}%)`);
       });
+      lines.push('');
+    }
+    
+    if (selected.benchmark_nifty) {
+      lines.push('— Benchmark vs Nifty Audit —');
+      const activeAll = benchmarkNifty.periods.find((p) => p.period === 'All') || benchmarkNifty.periods[2];
+      const active1Y = benchmarkNifty.periods.find((p) => p.period === '1Y') || benchmarkNifty.periods[0];
+      lines.push(`Portfolio XIRR (All Time): ${activeAll.portfolio_return != null ? `${activeAll.portfolio_return}%` : '—'} vs Nifty 50: ${activeAll.benchmark_return}% (Alpha: ${activeAll.alpha != null ? `${activeAll.alpha > 0 ? '+' : ''}${activeAll.alpha}%` : '—'})`);
+      lines.push(`Equity-Only XIRR (All Time): ${activeAll.equity_return != null ? `${activeAll.equity_return}%` : '—'} (Alpha: ${activeAll.equity_alpha != null ? `${activeAll.equity_alpha > 0 ? '+' : ''}${activeAll.equity_alpha}%` : '—'})`);
+      lines.push(`Portfolio XIRR (1 Year): ${active1Y.portfolio_return != null ? `${active1Y.portfolio_return}%` : '—'} vs Nifty 50: ${active1Y.benchmark_return}% (Alpha: ${active1Y.alpha != null ? `${active1Y.alpha > 0 ? '+' : ''}${active1Y.alpha}%` : '—'})`);
       lines.push('');
     }
 

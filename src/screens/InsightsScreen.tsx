@@ -5,7 +5,7 @@
  */
 import React, { useLayoutEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Text, useTheme, Button } from 'react-native-paper';
+import { Text, useTheme, Button, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 
@@ -273,6 +273,20 @@ const InsightsScreen: React.FC = () => {
               </View>
             ))}
           </View>
+        )}
+
+        {returns.portfolio_xirr != null && (
+          <>
+            <Divider style={{ marginTop: 14, marginBottom: 12, opacity: 0.5 }} />
+            <Button
+              mode="outlined"
+              icon="chart-areaspline"
+              onPress={() => router.push('/benchmark' as any)}
+              style={{ borderRadius: theme.roundness }}
+            >
+              Detailed Benchmark Audit
+            </Button>
+          </>
         )}
       </SectionCard>
 

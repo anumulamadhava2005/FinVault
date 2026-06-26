@@ -58,6 +58,7 @@ const CustomDrawer = (props: any) => {
     { section: 'FINANCES', route: 'goals', label: 'Goals', icon: 'flag-checkered' },
     { section: 'FINANCES', route: 'recap', label: 'Wealth Recap', icon: 'calendar-star' },
     { section: 'FINANCES', route: 'wrapped', label: 'Monthly Recap', icon: 'chart-timeline-variant' },
+    { section: 'FINANCES', route: 'benchmark', label: 'Benchmark Audit', icon: 'chart-areaspline' },
     { section: 'FINANCES', route: 'history', label: 'History', icon: 'history' },
     { section: 'FINANCES', route: 'retirement', label: 'Retirement', icon: 'island' },
     { section: 'FINANCES', route: 'reports', label: 'Reports', icon: 'file-chart' },
@@ -251,6 +252,7 @@ const CustomDrawer = (props: any) => {
           {renderMenuItem('goals', 'Goals', 'flag-checkered')}
           {renderMenuItem('recap', 'Wealth Recap', 'calendar-star')}
           {renderMenuItem('wrapped', 'Monthly Recap', 'chart-timeline-variant')}
+          {renderMenuItem('benchmark', 'Benchmark Audit', 'chart-areaspline')}
           {renderMenuItem('history', 'History', 'history')}
           {renderMenuItem('retirement', 'Retirement', 'island')}
           {renderMenuItem('reports', 'Reports', 'file-chart')}
@@ -1175,6 +1177,7 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="reports" options={{ title: 'Reports', drawerIcon: drawerIcon('file-chart') }} />
         <Drawer.Screen name="recap" options={{ title: 'Wealth Recap', drawerIcon: drawerIcon('calendar-star') }} />
         <Drawer.Screen name="wrapped" options={{ title: 'Monthly Recap', drawerIcon: drawerIcon('chart-timeline-variant') }} />
+        <Drawer.Screen name="benchmark" options={{ title: 'Benchmark Audit', drawerIcon: drawerIcon('chart-areaspline') }} />
         <Drawer.Screen name="history" options={{ title: 'History', drawerIcon: drawerIcon('history') }} />
         <Drawer.Screen name="daily-movement" options={{ title: 'Daily Movement', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="news-impact" options={{ title: 'Impact Analysis', drawerItemStyle: { display: 'none' } }} />
