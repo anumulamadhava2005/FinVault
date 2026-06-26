@@ -35,7 +35,7 @@ const WealthRecapScreen: React.FC = () => {
   const recap = useData(() => {
     captureNetWorthSnapshot(userId!);
     return wealthRecap(userId!, year);
-  });
+  }, [userId, year]);
   const years = useMemo(() => availableSnapshotYears(userId!), [userId, recap]);
 
   const positive = recap.growth >= 0;

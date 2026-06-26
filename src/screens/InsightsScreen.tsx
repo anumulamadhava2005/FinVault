@@ -111,7 +111,10 @@ const InsightsScreen: React.FC = () => {
             <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '700', letterSpacing: 0.5 }}>
               PORTFOLIO HEALTH
             </Text>
-            <Text variant="headlineSmall" style={{ fontWeight: '800', color: healthColor }}>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, marginTop: 2, lineHeight: 15 }}>
+              Investment quality score. Evaluates asset allocation risk, returns (XIRR), fee drag, and SIP discipline.
+            </Text>
+            <Text variant="headlineSmall" style={{ fontWeight: '800', color: healthColor, marginTop: 4 }}>
               Grade {health.grade} · {health.label}
             </Text>
             <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>

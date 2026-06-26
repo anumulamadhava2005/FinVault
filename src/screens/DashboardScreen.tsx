@@ -544,6 +544,9 @@ const DashboardScreen: React.FC = () => {
         {/* 4. Financial Health Card with Sparkline */}
         <Animated.View style={getAnimatedStyle(4)}>
           <SectionCard title="Financial Health">
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12, lineHeight: 16 }}>
+              Overall personal finance wellness score. Combines savings, cash liquidity, emergency reserves, and active insurance protection.
+            </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 20 }}>
               <Text variant="displaySmall" style={{ fontWeight: '800', color: statusColor(healthTone), fontVariant: ['tabular-nums'], letterSpacing: -1 }}>
                 {health.score}/100
@@ -766,12 +769,12 @@ const DashboardScreen: React.FC = () => {
                         justifyContent: 'space-between',
                       }}
                     >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 12 }}>
                         <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: `${theme.colors.primary}15`, justifyContent: 'center', alignItems: 'center' }}>
                           <MaterialCommunityIcons name="autorenew" size={18} color={theme.colors.primary} />
                         </View>
-                        <View>
-                          <Text variant="titleSmall" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
+                        <View style={{ flex: 1 }}>
+                          <Text variant="titleSmall" numberOfLines={1} ellipsizeMode="tail" style={{ fontWeight: '700', color: theme.colors.onSurface }}>
                             {sip.asset_name || 'SIP'}
                           </Text>
                           <Text variant="bodySmall" style={{ color: theme.dark ? '#B3B3B3' : theme.colors.onSurfaceVariant, fontSize: 11, fontWeight: '500' }}>
@@ -779,7 +782,7 @@ const DashboardScreen: React.FC = () => {
                           </Text>
                         </View>
                       </View>
-                      <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface, fontVariant: ['tabular-nums'] }}>
+                      <Text variant="titleMedium" style={{ fontWeight: '700', color: theme.colors.onSurface, fontVariant: ['tabular-nums'], flexShrink: 0 }}>
                         {formatINR(sip.amount)}
                       </Text>
                     </View>

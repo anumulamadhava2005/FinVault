@@ -21,6 +21,7 @@ export interface UserPreferences {
   theme: string; // light|dark|system
   sip_reminder_days: number;
   auto_lock_minutes: number;
+  sip_reminders_enabled: number;
 }
 
 export interface AssetType {

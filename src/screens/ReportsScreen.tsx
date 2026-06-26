@@ -39,6 +39,7 @@ import {
   passwordHealth,
   benchmarkComparison,
 } from '../services/finance';
+import { capitalGains } from '../services/taxService';
 import { chartColors, palette } from '../theme';
 import { todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
@@ -53,6 +54,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'health', label: 'Financial Health Audit' },
   { key: 'password', label: 'Password Health Audit' },
   { key: 'benchmark', label: 'Benchmark Allocation Audit' },
+  { key: 'tax', label: 'Capital Gains Audit' },
 ];
 
 // Base64 helper tables and encoders/decoders for Hermes/React Native compatibility
@@ -803,6 +805,111 @@ const buildHtmlReport = async (
     `;
   }
 
+  let taxHtml = '';
+  if (selected.tax) {
+    const t = capitalGains(userId);
+    taxHtml = `
+      <div class="section">
+        <div class="section-title">Capital Gains Audit</div>
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Realized Capital Gains</div>
+            <div class="kpi-value" style="font-size: 14px; font-weight: 800; margin-top: 5px; line-height: 18px;">
+              STCG: ${formatINR(t.realized_stcg)}<br/>
+              LTCG: ${formatINR(t.realized_ltcg)}
+            </div>
+            <div class="kpi-sub" style="margin-top: 4px;">Total: <strong>${formatINR(t.realized_total)}</strong></div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Unrealized Capital Gains</div>
+            <div class="kpi-value" style="font-size: 14px; font-weight: 800; margin-top: 5px; line-height: 18px;">
+              STCG: ${formatINR(t.unrealized_stcg)}<br/>
+              LTCG: ${formatINR(t.unrealized_ltcg)}
+            </div>
+            <div class="kpi-sub" style="margin-top: 4px;">Total: <strong>${formatINR(t.unrealized_total)}</strong></div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #8b5cf6;">
+            <div class="kpi-label">Combined Gains</div>
+            <div class="kpi-value" style="font-size: 14px; font-weight: 800; margin-top: 5px; line-height: 18px;">
+              STCG: ${formatINR(t.stcg_total)}<br/>
+              LTCG: ${formatINR(t.ltcg_total)}
+            </div>
+            <div class="kpi-sub" style="margin-top: 4px;">Grand Total: <strong>${formatINR(t.grand_total)}</strong></div>
+          </div>
+        </div>
+
+        ${t.realized_rows.length > 0 ? `
+          <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 10px;">Realized Capital Gains (Taxable Sales)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Asset Name</th>
+                <th>Type</th>
+                <th>Purchase Date</th>
+                <th>Sale Date</th>
+                <th class="text-right">Holding Days</th>
+                <th class="text-right">Sale Value</th>
+                <th class="text-right">Gain / Loss</th>
+                <th>Tax Class</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${t.realized_rows.map(r => `
+                <tr>
+                  <td><strong>${r.name}</strong></td>
+                  <td>${r.type_name}</td>
+                  <td>${r.purchase_date}</td>
+                  <td>${r.sale_date}</td>
+                  <td class="text-right">${r.holding_period_days === -1 ? 'Unknown' : `${r.holding_period_days}d`}</td>
+                  <td class="text-right">${formatINR(r.sale_value)}</td>
+                  <td class="text-right" style="color: ${r.pnl >= 0 ? '#10b981' : '#ef4444'}; font-weight: 600;">${formatINR(r.pnl)}</td>
+                  <td><span class="badge badge-${r.is_long_term ? 'good' : 'warn'}">${r.is_long_term ? 'LTCG' : 'STCG'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+
+        ${t.unrealized_rows.length > 0 ? `
+          <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Unrealized Capital Gains (Active Holdings)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Asset Name</th>
+                <th>Type</th>
+                <th>Purchase Date</th>
+                <th class="text-right">Holding Days</th>
+                <th class="text-right">Invested</th>
+                <th class="text-right">Current Value</th>
+                <th class="text-right">Unrealized Gain</th>
+                <th>Tax Class</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${t.unrealized_rows.map(r => `
+                <tr>
+                  <td><strong>${r.name}</strong></td>
+                  <td>${r.type_name}</td>
+                  <td>${r.purchase_date}</td>
+                  <td class="text-right">${r.holding_period_days}d</td>
+                  <td class="text-right">${formatINR(r.invested_amount)}</td>
+                  <td class="text-right">${formatINR(r.current_value)}</td>
+                  <td class="text-right" style="color: ${r.unrealized_gain >= 0 ? '#10b981' : '#ef4444'}; font-weight: 600;">${formatINR(r.unrealized_gain)}</td>
+                  <td><span class="badge badge-${r.is_long_term ? 'good' : 'warn'}">${r.is_long_term ? 'LTCG' : 'STCG'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+        ${t.harvest_alert.alert_text ? `
+          <div style="margin-top: 15px; padding: 12px; border: 1px solid #a7f3d0; border-radius: 6px; background-color: #ecfdf5; color: #065f46; font-size: 11.5px; line-height: 17px; page-break-inside: avoid;">
+            <strong>Tax-Saving Recommendation:</strong> ${t.harvest_alert.alert_text}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   return `
     <!DOCTYPE html>
     <html>
@@ -1009,6 +1116,7 @@ const buildHtmlReport = async (
       ${loansHtml}
       ${protectHtml}
       ${goalsHtml}
+      ${taxHtml}
       ${vaultHtml}
     </body>
     </html>
@@ -1031,6 +1139,7 @@ const ReportsScreen: React.FC = () => {
   const pwdHealth = useData(() => passwordHealth(userId!));
   const benchmark = useData(() => benchmarkComparison(userId!));
   const goals = useData(() => goalsProgress(userId!));
+  const tax = useData(() => capitalGains(userId!));
 
   const [selected, setSelected] = useState<Record<string, boolean>>({
     assets: true,
@@ -1041,6 +1150,7 @@ const ReportsScreen: React.FC = () => {
     health: true,
     password: true,
     benchmark: true,
+    tax: true,
   });
   const [snack, setSnack] = useState('');
   const allOn = MODULES.every((m) => selected[m.key]);
@@ -1125,6 +1235,16 @@ const ReportsScreen: React.FC = () => {
     if (selected.goals) {
       lines.push('— Financial Goals —');
       goals.goals.forEach((g) => lines.push(`  • ${g.name}: ${g.pct}% (${g.status_label})`));
+      lines.push('');
+    }
+    if (selected.tax) {
+      lines.push('— Capital Gains Audit —');
+      lines.push(`Realized STCG: ${formatINR(tax.realized_stcg)} · Realized LTCG: ${formatINR(tax.realized_ltcg)} (Total: ${formatINR(tax.realized_total)})`);
+      lines.push(`Unrealized STCG: ${formatINR(tax.unrealized_stcg)} · Unrealized LTCG: ${formatINR(tax.unrealized_ltcg)} (Total: ${formatINR(tax.unrealized_total)})`);
+      lines.push(`Combined Total Gains: ${formatINR(tax.grand_total)}`);
+      if (tax.harvest_alert.alert_text) {
+        lines.push(`Recommendation: ${tax.harvest_alert.alert_text}`);
+      }
       lines.push('');
     }
     return lines.join('\n');
@@ -1277,7 +1397,56 @@ const ReportsScreen: React.FC = () => {
           </View>
         </SectionCard>
 
-        {/* 3. Password Health Card */}
+        {/* 3. Capital Gains Audit Card */}
+        <SectionCard title="Capital Gains Audit" style={{ marginBottom: 12 }}>
+          <View style={{ gap: 12 }}>
+            <Row>
+              <Kpi
+                flex
+                label="Realized Gains"
+                value={formatINR(tax.realized_total)}
+                sub={`STCG: ${formatINR(tax.realized_stcg)}\nLTCG: ${formatINR(tax.realized_ltcg)}`}
+                subTone={tax.realized_total >= 0 ? 'good' : 'bad'}
+              />
+              <Kpi
+                flex
+                label="Unrealized Gains"
+                value={formatINR(tax.unrealized_total)}
+                sub={`STCG: ${formatINR(tax.unrealized_stcg)}\nLTCG: ${formatINR(tax.unrealized_ltcg)}`}
+                subTone={tax.unrealized_total >= 0 ? 'good' : 'bad'}
+              />
+            </Row>
+
+            <Divider style={{ marginVertical: 4 }} />
+            
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text variant="titleSmall" style={{ fontWeight: '700' }}>Combined Total Gains</Text>
+              <Text variant="titleSmall" style={{ fontWeight: '800', color: tax.grand_total >= 0 ? palette.good : palette.danger }}>
+                {formatINR(tax.grand_total)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: -4 }}>
+              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Combined STCG / LTCG</Text>
+              <Text variant="bodySmall" style={{ fontWeight: '600', color: theme.colors.onSurfaceVariant }}>
+                {formatINR(tax.stcg_total)} / {formatINR(tax.ltcg_total)}
+              </Text>
+            </View>
+            {tax.harvest_alert.alert_text && (
+              <View style={{
+                flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginTop: 12, padding: 12,
+                borderRadius: theme.roundness, borderWidth: 1,
+                backgroundColor: 'rgba(82, 167, 126, 0.12)', borderColor: 'rgba(82, 167, 126, 0.3)'
+              }}>
+                <MaterialCommunityIcons name="piggy-bank" size={18} color={palette.good} style={{ marginTop: 1 }} />
+                <Text variant="bodySmall" style={{ flex: 1, color: theme.colors.onSurface, fontWeight: '600', lineHeight: 18 }}>
+                  {tax.harvest_alert.alert_text}
+                </Text>
+              </View>
+            )}
+          </View>
+        </SectionCard>
+
+        {/* 4. Password Health Card */}
         <SectionCard title="Password Health" style={{ marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Text variant="titleMedium" style={{ fontWeight: '700' }}>Vault Score</Text>

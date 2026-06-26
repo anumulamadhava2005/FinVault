@@ -86,7 +86,7 @@ export const SectionCard: React.FC<{
   return cardContent;
 };
 
-export const Kpi: React.FC<{ label: string; value: string; sub?: string; subTone?: 'good' | 'bad' | 'muted'; flex?: boolean }> = ({
+export const Kpi: React.FC<{ label: string; value: string; sub?: string; subTone?: 'good' | 'bad' | 'muted' | 'warn'; flex?: boolean }> = ({
   label,
   value,
   sub,
@@ -94,7 +94,16 @@ export const Kpi: React.FC<{ label: string; value: string; sub?: string; subTone
   flex = true,
 }) => {
   const theme = useTheme();
-  const subColor = subTone === 'good' ? palette.good : subTone === 'bad' ? palette.danger : theme.dark ? '#B3B3B3' : theme.colors.onSurfaceVariant;
+  const subColor =
+    subTone === 'good'
+      ? palette.good
+      : subTone === 'bad'
+      ? palette.danger
+      : subTone === 'warn'
+      ? palette.warn
+      : theme.dark
+      ? '#B3B3B3'
+      : theme.colors.onSurfaceVariant;
   return (
     <View
       style={[

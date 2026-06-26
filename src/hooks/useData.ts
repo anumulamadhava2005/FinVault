@@ -4,16 +4,16 @@ import { useApp } from '../context/AppContext';
 
 /**
  * Runs a synchronous query function and re-runs it whenever the screen gains
- * focus or the global refresh signal changes (after a create/update/delete).
+ * focus, the global refresh signal changes, or any of the dependencies change.
  */
-export function useData<T>(fn: () => T): T {
+export function useData<T>(fn: () => T, deps: any[] = []): T {
   const { refreshKey } = useApp();
   const [value, setValue] = useState<T>(fn);
   useFocusEffect(
     useCallback(() => {
       setValue(fn());
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [refreshKey]),
+    }, [refreshKey, ...deps]),
   );
   return value;
 }
@@ -22,7 +22,7 @@ export function useData<T>(fn: () => T): T {
  * Same as useData but wraps the query in try/catch and exposes { data, error }
  * so callers can render error states instead of silently showing empty content.
  */
-export function useDataSafe<T>(fn: () => T): { data: T | null; error: string | null } {
+export function useDataSafe<T>(fn: () => T, deps: any[] = []): { data: T | null; error: string | null } {
   const { refreshKey } = useApp();
   const [data, setData] = useState<T | null>(() => {
     try { return fn(); } catch { return null; }
@@ -38,8 +38,9 @@ export function useDataSafe<T>(fn: () => T): { data: T | null; error: string | n
         setError(e instanceof Error ? e.message : 'Query failed');
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [refreshKey]),
+    }, [refreshKey, ...deps]),
   );
 
   return { data, error };
 }
+
