@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useLayoutEffect } from 'react';
-import { LayoutAnimation, ScrollView, View, StyleSheet } from 'react-native';
+import React, { useState, useMemo, useLayoutEffect, useEffect } from 'react';
+import { LayoutAnimation, ScrollView, View, StyleSheet, BackHandler, Pressable } from 'react-native';
 import { Card, SegmentedButtons, Text, useTheme, Snackbar, Divider, Button, TextInput, Checkbox } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { Kpi, Row, Screen, SectionCard } from '../components/ui';
 import { TrendLine } from '../components/charts';
 import { useApp } from '../context/AppContext';
@@ -18,6 +18,7 @@ const DebtPayoffScreen: React.FC = () => {
   const { userId } = useApp();
   const theme = useTheme();
   const navigation = useNavigation();
+  const router = useRouter();
 
   const [snackMsg, setSnackMsg] = useState<string | null>(null);
 
@@ -50,16 +51,45 @@ const DebtPayoffScreen: React.FC = () => {
     }));
   };
 
+  // Hardware back press handler for Android
+  useEffect(() => {
+    const onBackPress = () => {
+      if (navigation.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/loans' as any);
+      }
+      return true; // prevent default behavior (app exit/dashboard redirect)
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, router]);
+
   // Configure navigation header
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Pressable
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/loans' as any);
+            }
+          }}
+          hitSlop={12}
+          style={{ paddingLeft: 16, paddingRight: 8, paddingVertical: 4 }}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.onSurface} />
+        </Pressable>
+      ),
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
           <ThemeToggle color={theme.colors.onSurface} />
         </View>
       ),
     });
-  }, [navigation, theme]);
+  }, [navigation, theme, router]);
 
   // Filter active loans based on user selection
   const loansToSimulate = useMemo(() => {
@@ -88,7 +118,7 @@ const DebtPayoffScreen: React.FC = () => {
     const accelerated: number[] = [];
 
     for (let m = 0; m <= maxDuration; m += step) {
-      labels.push(`Month ${m}`);
+      labels.push(`M ${m}`);
       
       // Pad with 0 if the simulation finished earlier than this month
       const baseVal = m < result.baselineSeries.length ? result.baselineSeries[m] : 0;
@@ -100,7 +130,7 @@ const DebtPayoffScreen: React.FC = () => {
 
     // Ensure the absolute final month is plotted to show the exact zero crossing
     const lastMonthIdx = maxDuration;
-    const lastLabel = `Month ${lastMonthIdx}`;
+    const lastLabel = `M ${lastMonthIdx}`;
     if (labels[labels.length - 1] !== lastLabel) {
       labels.push(lastLabel);
       const baseVal = result.baselineSeries[result.baselineSeries.length - 1] || 0;
@@ -252,17 +282,17 @@ const DebtPayoffScreen: React.FC = () => {
                 <TrendLine
                   labels={chartData.labels}
                   datasets={[
-                    { data: chartData.accelerated, color: theme.colors.primary }, // Accelerated Plan
-                    { data: chartData.baseline, color: theme.colors.outline }, // Baseline Plan
+                    { data: chartData.accelerated, color: palette.good }, // Accelerated Plan (Emerald Green)
+                    { data: chartData.baseline, color: theme.colors.secondary }, // Baseline Plan (Muted Gray)
                   ]}
                 />
                 <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 12 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: theme.colors.primary }} />
+                    <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: palette.good }} />
                     <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Accelerated Plan</Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: theme.colors.outline }} />
+                    <View style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: theme.colors.secondary }} />
                     <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Baseline (Mandatory EMI)</Text>
                   </View>
                 </View>

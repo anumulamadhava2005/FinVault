@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useLayoutEffect } from 'react';
-import { LayoutAnimation, ScrollView, View, StyleSheet } from 'react-native';
+import React, { useState, useMemo, useLayoutEffect, useEffect } from 'react';
+import { LayoutAnimation, ScrollView, View, StyleSheet, BackHandler, Pressable } from 'react-native';
 import { Card, SegmentedButtons, Text, useTheme, Snackbar, Divider, Button, Menu, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { Kpi, Row, Screen, SectionCard } from '../components/ui';
 import { TrendLine } from '../components/charts';
 import { useApp } from '../context/AppContext';
@@ -19,6 +19,7 @@ const ExpenseRatioScreen: React.FC = () => {
   const { userId } = useApp();
   const theme = useTheme();
   const navigation = useNavigation();
+  const router = useRouter();
 
   const [snackMsg, setSnackMsg] = useState<string | null>(null);
 
@@ -73,16 +74,45 @@ const ExpenseRatioScreen: React.FC = () => {
     setFundMenuOpen(false);
   };
 
+  // Hardware back press handler for Android
+  useEffect(() => {
+    const onBackPress = () => {
+      if (navigation.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/insights' as any);
+      }
+      return true; // prevent default behavior
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, router]);
+
   // Configure navigation header
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Pressable
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/insights' as any);
+            }
+          }}
+          hitSlop={12}
+          style={{ paddingLeft: 16, paddingRight: 8, paddingVertical: 4 }}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.onSurface} />
+        </Pressable>
+      ),
       headerRight: () => (
-         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
-           <ThemeToggle color={theme.colors.onSurface} />
-         </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          <ThemeToggle color={theme.colors.onSurface} />
+        </View>
       ),
     });
-  }, [navigation, theme]);
+  }, [navigation, theme, router]);
 
   // Compounding math projection
   const projection = useMemo(() => {

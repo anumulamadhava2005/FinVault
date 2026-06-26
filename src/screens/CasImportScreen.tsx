@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useLayoutEffect } from 'react';
-import { View, ScrollView, StyleSheet, Alert, LayoutAnimation, Platform, Pressable } from 'react-native';
+import React, { useState, useMemo, useLayoutEffect, useEffect } from 'react';
+import { View, ScrollView, StyleSheet, Alert, LayoutAnimation, Platform, Pressable, BackHandler } from 'react-native';
 import { Button, Card, Dialog, Portal, TextInput, Text, useTheme, Snackbar, Checkbox, IconButton, List, Divider, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useNavigation } from 'expo-router';
@@ -37,17 +37,46 @@ const CasImportScreen: React.FC = () => {
   // Import results
   const [importResult, setImportResult] = useState<{ assets: number; txns: number } | null>(null);
 
+  // Hardware back press handler for Android
+  useEffect(() => {
+    const onBackPress = () => {
+      if (navigation.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/assets' as any);
+      }
+      return true; // prevent default behavior
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, router]);
+
   // Header options
   useLayoutEffect(() => {
     navigation.setOptions({
       headerTitle: 'CAS Statement Import',
+      headerLeft: () => (
+        <Pressable
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/assets' as any);
+            }
+          }}
+          hitSlop={12}
+          style={{ paddingLeft: 16, paddingRight: 8, paddingVertical: 4 }}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.onSurface} />
+        </Pressable>
+      ),
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
           <ThemeToggle color={theme.colors.onSurface} />
         </View>
       ),
     });
-  }, [navigation, theme]);
+  }, [navigation, theme, router]);
 
   // File Picker
   const handlePickDocument = async () => {

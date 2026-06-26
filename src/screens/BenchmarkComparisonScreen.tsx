@@ -1,8 +1,8 @@
-import React, { useState, useLayoutEffect } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import React, { useState, useLayoutEffect, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, BackHandler, Pressable } from 'react-native';
 import { Text, useTheme, SegmentedButtons, Card, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 
 import { Screen, SectionCard, Kpi, Row } from '../components/ui';
 import { TrendLine } from '../components/charts';
@@ -12,11 +12,13 @@ import { getBenchmarkComparison } from '../services/benchmarkService';
 import { portfolioReturns } from '../services/portfolioIntelligence';
 import { palette } from '../theme';
 import { formatINR, formatINRCompact } from '../utils/money';
+import ThemeToggle from '../components/ThemeToggle';
 
 const BenchmarkComparisonScreen: React.FC = () => {
   const { userId } = useApp();
   const theme = useTheme();
   const navigation = useNavigation();
+  const router = useRouter();
 
   // Selector States
   const [benchmarkType, setBenchmarkType] = useState<'nifty' | 'sensex' | 'blended'>('nifty');
@@ -29,12 +31,43 @@ const BenchmarkComparisonScreen: React.FC = () => {
   // Load raw returns for holding-level analysis
   const returns = useData(() => portfolioReturns(userId!), [userId]);
 
+  // Hardware back press handler for Android
+  useEffect(() => {
+    const onBackPress = () => {
+      if (navigation.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/insights' as any);
+      }
+      return true; // prevent default behavior
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, router]);
+
+  // Configure navigation header
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Pressable
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/insights' as any);
+            }
+          }}
+          hitSlop={12}
+          style={{ paddingLeft: 16, paddingRight: 8, paddingVertical: 4 }}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.onSurface} />
+        </Pressable>
+      ),
+      headerRight: () => <View style={{ marginRight: 4 }}><ThemeToggle color={theme.colors.onSurface} /></View>,
       title: 'Benchmark Comparison',
       headerTitleStyle: { fontWeight: '700' },
     });
-  }, [navigation]);
+  }, [navigation, theme, router]);
 
   // Find active period data
   const activePeriod = comp.periods.find((p) => p.period === timeframe) || comp.periods[2];

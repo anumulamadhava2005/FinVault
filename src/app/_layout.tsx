@@ -1148,6 +1148,7 @@ const Navigator: React.FC = () => {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Drawer
         drawerContent={(p) => <CustomDrawer {...p} />}
+        backBehavior="history"
         screenOptions={{
           headerStyle: { backgroundColor: theme.colors.surface },
           headerTintColor: theme.colors.onSurface,

@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useLayoutEffect } from 'react';
-import { LayoutAnimation, ScrollView, View, StyleSheet } from 'react-native';
+import React, { useState, useMemo, useLayoutEffect, useEffect } from 'react';
+import { LayoutAnimation, ScrollView, View, StyleSheet, BackHandler, Pressable } from 'react-native';
 import { Card, SegmentedButtons, Text, useTheme, Snackbar, Divider, Button, Menu, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { EmptyState, Kpi, LineItem, ProgressBar, Row, Screen, SectionCard } from '../components/ui';
 import { useApp } from '../context/AppContext';
 import { all } from '../db';
@@ -16,6 +16,7 @@ const SectorOverlapScreen: React.FC = () => {
   const { userId } = useApp();
   const theme = useTheme();
   const navigation = useNavigation();
+  const router = useRouter();
 
   // Active tab selection
   const [activeTab, setActiveTab] = useState<'sectors' | 'stocks' | 'overlap'>('sectors');
@@ -61,16 +62,45 @@ const SectorOverlapScreen: React.FC = () => {
     return getMutualFundOverlap(fund1.isin || '', fund2.isin || '', fund1.name, fund2.name);
   }, [fund1Id, fund2Id, activeFunds]);
 
+  // Hardware back press handler for Android
+  useEffect(() => {
+    const onBackPress = () => {
+      if (navigation.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/insights' as any);
+      }
+      return true; // prevent default behavior
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [navigation, router]);
+
   // Configure navigation header
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Pressable
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/insights' as any);
+            }
+          }}
+          hitSlop={12}
+          style={{ paddingLeft: 16, paddingRight: 8, paddingVertical: 4 }}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.onSurface} />
+        </Pressable>
+      ),
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
           <ThemeToggle color={theme.colors.onSurface} />
         </View>
       ),
     });
-  }, [navigation, theme]);
+  }, [navigation, theme, router]);
 
   // Helper for sector colors
   const getSectorColor = (sector: string, index: number) => {
