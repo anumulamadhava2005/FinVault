@@ -326,6 +326,15 @@ const InsightsScreen: React.FC = () => {
             <LineItem key={c.cls} label={c.label} value={`${c.pct}% · ${formatINR(c.value)}`} />
           ))}
         </View>
+        <Divider style={{ marginTop: 14, marginBottom: 12, opacity: 0.5 }} />
+        <Button
+          mode="outlined"
+          icon="chart-pie"
+          onPress={() => router.push('/sector' as any)}
+          style={{ borderRadius: theme.roundness }}
+        >
+          Detailed Sector Overlap Audit
+        </Button>
       </SectionCard>
 
       {/* ── Hidden costs ── */}

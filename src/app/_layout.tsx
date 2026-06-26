@@ -54,13 +54,10 @@ const CustomDrawer = (props: any) => {
     { section: 'FINANCES', route: 'feed', label: 'Wealth Feed', icon: 'newspaper-variant-outline' },
     { section: 'FINANCES', route: 'assets', label: 'Assets', icon: 'chart-line' },
     { section: 'FINANCES', route: 'expenses', label: 'Expenses', icon: 'cash-multiple' },
-    { section: 'FINANCES', route: 'income', label: 'Passive Income', icon: 'cash' },
-    { section: 'FINANCES', route: 'sector', label: 'Sector Overlap', icon: 'chart-pie' },
     { section: 'FINANCES', route: 'loans', label: 'Loans', icon: 'bank' },
     { section: 'FINANCES', route: 'goals', label: 'Goals', icon: 'flag-checkered' },
     { section: 'FINANCES', route: 'recap', label: 'Wealth Recap', icon: 'calendar-star' },
     { section: 'FINANCES', route: 'wrapped', label: 'Monthly Recap', icon: 'chart-timeline-variant' },
-    { section: 'FINANCES', route: 'benchmark', label: 'Benchmark Audit', icon: 'chart-areaspline' },
     { section: 'FINANCES', route: 'history', label: 'History', icon: 'history' },
     { section: 'FINANCES', route: 'retirement', label: 'Retirement', icon: 'island' },
     { section: 'FINANCES', route: 'reports', label: 'Reports', icon: 'file-chart' },
@@ -250,13 +247,10 @@ const CustomDrawer = (props: any) => {
           {renderMenuItem('feed', 'Wealth Feed', 'newspaper-variant-outline')}
           {renderMenuItem('assets', 'Assets', 'chart-line')}
           {renderMenuItem('expenses', 'Expenses', 'cash-multiple')}
-          {renderMenuItem('income', 'Passive Income', 'cash')}
-          {renderMenuItem('sector', 'Sector Overlap', 'chart-pie')}
           {renderMenuItem('loans', 'Loans', 'bank')}
           {renderMenuItem('goals', 'Goals', 'flag-checkered')}
           {renderMenuItem('recap', 'Wealth Recap', 'calendar-star')}
           {renderMenuItem('wrapped', 'Monthly Recap', 'chart-timeline-variant')}
-          {renderMenuItem('benchmark', 'Benchmark Audit', 'chart-areaspline')}
           {renderMenuItem('history', 'History', 'history')}
           {renderMenuItem('retirement', 'Retirement', 'island')}
           {renderMenuItem('reports', 'Reports', 'file-chart')}
@@ -1174,8 +1168,8 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="feed" options={{ title: 'Wealth Feed', drawerIcon: drawerIcon('newspaper-variant-outline') }} />
         <Drawer.Screen name="assets" options={{ title: 'Assets', drawerIcon: drawerIcon('chart-line'), headerShown: false }} />
         <Drawer.Screen name="expenses" options={{ title: 'Expenses', drawerIcon: drawerIcon('cash-multiple') }} />
-        <Drawer.Screen name="income" options={{ title: 'Passive Income', drawerIcon: drawerIcon('cash') }} />
-        <Drawer.Screen name="sector" options={{ title: 'Sector Overlap', drawerIcon: drawerIcon('chart-pie') }} />
+        <Drawer.Screen name="income" options={{ title: 'Passive Income', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="sector" options={{ title: 'Sector Overlap', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="loans" options={{ title: 'Loans', drawerIcon: drawerIcon('bank') }} />
         <Drawer.Screen name="protect" options={{ title: 'Protect', drawerIcon: drawerIcon('shield-check') }} />
         <Drawer.Screen name="goals" options={{ title: 'Goals', drawerIcon: drawerIcon('flag-checkered'), headerShown: false }} />
@@ -1183,7 +1177,7 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="reports" options={{ title: 'Reports', drawerIcon: drawerIcon('file-chart') }} />
         <Drawer.Screen name="recap" options={{ title: 'Wealth Recap', drawerIcon: drawerIcon('calendar-star') }} />
         <Drawer.Screen name="wrapped" options={{ title: 'Monthly Recap', drawerIcon: drawerIcon('chart-timeline-variant') }} />
-        <Drawer.Screen name="benchmark" options={{ title: 'Benchmark Audit', drawerIcon: drawerIcon('chart-areaspline') }} />
+        <Drawer.Screen name="benchmark" options={{ title: 'Benchmark Audit', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="history" options={{ title: 'History', drawerIcon: drawerIcon('history') }} />
         <Drawer.Screen name="daily-movement" options={{ title: 'Daily Movement', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="news-impact" options={{ title: 'Impact Analysis', drawerItemStyle: { display: 'none' } }} />
