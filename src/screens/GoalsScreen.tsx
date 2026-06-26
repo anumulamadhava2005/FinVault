@@ -133,7 +133,7 @@ const GoalsScreen: React.FC = () => {
         )}
       </Screen>
 
-      <FAB icon="plus" label="Add Goal" style={{ position: 'absolute', right: 16, bottom: 16 }} onPress={() => setAddOpen(true)} />
+      <FAB icon="plus" label="Add Goal" style={{ position: 'absolute', right: 16, bottom: 28 }} onPress={() => setAddOpen(true)} />
 
       <Portal>
         <Dialog visible={addOpen} onDismiss={() => setAddOpen(false)} style={{ maxHeight: '85%', borderRadius: theme.roundness }}>

@@ -624,7 +624,7 @@ const AssetsScreen: React.FC = () => {
         style={{
           position: 'absolute',
           right: 16,
-          bottom: selectMode ? 80 : 16,
+          bottom: selectMode ? 92 : 28,
           zIndex: 10,
         }}
       >

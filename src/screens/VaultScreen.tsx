@@ -340,7 +340,7 @@ const VaultScreen: React.FC = () => {
 
       <BouncePressable
         onPress={() => setAddOpen(true)}
-        style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 10 }}
+        style={{ position: 'absolute', right: 16, bottom: 28, zIndex: 10 }}
       >
         <FAB
           icon="plus"

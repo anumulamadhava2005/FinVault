@@ -451,7 +451,7 @@ const PassiveIncomeScreen: React.FC = () => {
           position: 'absolute',
           margin: 16,
           right: 0,
-          bottom: 0,
+          bottom: 12,
           backgroundColor: theme.colors.primary,
         }}
         color={theme.colors.onPrimary}

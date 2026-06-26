@@ -1131,7 +1131,7 @@ const ExpensesScreen: React.FC = () => {
         style={{
           position: 'absolute',
           right: 16,
-          bottom: 16,
+          bottom: 28,
           zIndex: 10,
         }}
       >
