@@ -41,6 +41,7 @@ import {
 } from '../services/finance';
 import { capitalGains } from '../services/taxService';
 import { getBenchmarkComparison } from '../services/benchmarkService';
+import { getPassiveIncomeSummary } from '../services/passiveIncomeService';
 import { chartColors, palette } from '../theme';
 import { todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
@@ -57,6 +58,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'benchmark', label: 'Benchmark Allocation Audit' },
   { key: 'benchmark_nifty', label: 'Benchmark vs Nifty Audit' },
   { key: 'tax', label: 'Capital Gains Audit' },
+  { key: 'passive_income', label: 'Passive Income & Forecast' },
 ];
 
 // Base64 helper tables and encoders/decoders for Hermes/React Native compatibility
@@ -992,6 +994,84 @@ const buildHtmlReport = async (
     `;
   }
 
+  let passiveIncomeHtml = '';
+  if (selected.passive_income) {
+    const pi = getPassiveIncomeSummary(userId);
+    let receivedRows = '';
+    if (pi.received_list.length > 0) {
+      receivedRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 10px;">Logged Income Receipts</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Asset / Source</th>
+              <th>Type</th>
+              <th>Date Received</th>
+              <th class="text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pi.received_list.map(r => `
+              <tr>
+                <td><strong>${r.name}</strong></td>
+                <td>${r.type_label}</td>
+                <td>${r.date}</td>
+                <td class="text-right" style="font-weight: 600; color: #10b981;">${formatINR(r.amount)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    let forecastRows = '';
+    if (pi.forecast_timeline.length > 0) {
+      forecastRows = `
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Upcoming Payout Forecast (Next 12 Months)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Asset / Source</th>
+              <th>Payout Type</th>
+              <th>Expected Date</th>
+              <th class="text-right">Expected Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pi.forecast_timeline.map(f => `
+              <tr>
+                <td><strong>${f.asset_name}</strong></td>
+                <td>${f.type_label}</td>
+                <td>${f.date}</td>
+                <td class="text-right" style="font-weight: 600; color: #3b82f6;">${formatINR(f.amount)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    passiveIncomeHtml = `
+      <div class="section">
+        <div class="section-title">Passive Income & Forecast</div>
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Received (Current FY)</div>
+            <div class="kpi-value">${formatINR(pi.received_this_year)}</div>
+            <div class="kpi-sub">Total passive cashflow</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Projected (Next 12M)</div>
+            <div class="kpi-value">${formatINR(pi.forecasted_12m)}</div>
+            <div class="kpi-sub">Auto-forecasted upcoming cashflow</div>
+          </div>
+        </div>
+        ${receivedRows}
+        ${forecastRows}
+      </div>
+    `;
+  }
+
   return `
     <!DOCTYPE html>
     <html>
@@ -1200,6 +1280,7 @@ const buildHtmlReport = async (
       ${protectHtml}
       ${goalsHtml}
       ${taxHtml}
+      ${passiveIncomeHtml}
       ${vaultHtml}
     </body>
     </html>
@@ -1224,7 +1305,8 @@ const ReportsScreen: React.FC = () => {
   const goals = useData(() => goalsProgress(userId!));
   const tax = useData(() => capitalGains(userId!));
   const benchmarkNifty = useData(() => getBenchmarkComparison(userId!, 'nifty'));
-
+  const passiveIncome = useData(() => getPassiveIncomeSummary(userId!));
+ 
   const [selected, setSelected] = useState<Record<string, boolean>>({
     assets: true,
     loans: true,
@@ -1236,6 +1318,7 @@ const ReportsScreen: React.FC = () => {
     benchmark: true,
     benchmark_nifty: true,
     tax: true,
+    passive_income: true,
   });
   const [snack, setSnack] = useState('');
   const allOn = MODULES.every((m) => selected[m.key]);
@@ -1339,6 +1422,15 @@ const ReportsScreen: React.FC = () => {
       lines.push(`Combined Total Gains: ${formatINR(tax.grand_total)}`);
       if (tax.harvest_alert.alert_text) {
         lines.push(`Recommendation: ${tax.harvest_alert.alert_text}`);
+      }
+      lines.push('');
+    }
+    if (selected.passive_income) {
+      lines.push('— Passive Income & Forecast —');
+      lines.push(`Received (Current FY): ${formatINR(passiveIncome.received_this_year)}`);
+      lines.push(`Projected (Next 12M): ${formatINR(passiveIncome.forecasted_12m)}`);
+      if (passiveIncome.next_payout) {
+        lines.push(`Next Expected: ${formatINR(passiveIncome.next_payout.amount)} on ${passiveIncome.next_payout.date} (${passiveIncome.next_payout.type_label})`);
       }
       lines.push('');
     }

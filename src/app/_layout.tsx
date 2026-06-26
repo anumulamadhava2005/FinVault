@@ -54,6 +54,7 @@ const CustomDrawer = (props: any) => {
     { section: 'FINANCES', route: 'feed', label: 'Wealth Feed', icon: 'newspaper-variant-outline' },
     { section: 'FINANCES', route: 'assets', label: 'Assets', icon: 'chart-line' },
     { section: 'FINANCES', route: 'expenses', label: 'Expenses', icon: 'cash-multiple' },
+    { section: 'FINANCES', route: 'income', label: 'Passive Income', icon: 'cash-usd' },
     { section: 'FINANCES', route: 'loans', label: 'Loans', icon: 'bank' },
     { section: 'FINANCES', route: 'goals', label: 'Goals', icon: 'flag-checkered' },
     { section: 'FINANCES', route: 'recap', label: 'Wealth Recap', icon: 'calendar-star' },
@@ -1170,6 +1171,7 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="feed" options={{ title: 'Wealth Feed', drawerIcon: drawerIcon('newspaper-variant-outline') }} />
         <Drawer.Screen name="assets" options={{ title: 'Assets', drawerIcon: drawerIcon('chart-line'), headerShown: false }} />
         <Drawer.Screen name="expenses" options={{ title: 'Expenses', drawerIcon: drawerIcon('cash-multiple') }} />
+        <Drawer.Screen name="income" options={{ title: 'Passive Income', drawerIcon: drawerIcon('cash-usd') }} />
         <Drawer.Screen name="loans" options={{ title: 'Loans', drawerIcon: drawerIcon('bank') }} />
         <Drawer.Screen name="protect" options={{ title: 'Protect', drawerIcon: drawerIcon('shield-check') }} />
         <Drawer.Screen name="goals" options={{ title: 'Goals', drawerIcon: drawerIcon('flag-checkered'), headerShown: false }} />
