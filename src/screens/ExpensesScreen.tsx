@@ -9,7 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Image } from 'expo-image';
 import * as Sharing from 'expo-sharing';
-import { useNavigation } from 'expo-router';
+import { useNavigation, router } from 'expo-router';
 import BouncePressable from '../components/BouncePressable';
 import BillScanModal from '../components/BillScanModal';
 import NotificationBell from '../components/NotificationBell';
@@ -736,6 +736,19 @@ const ExpensesScreen: React.FC = () => {
                     </Text>
                   </View>
                 </View>
+
+                <Divider style={{ marginVertical: 14, backgroundColor: theme.colors.outlineVariant }} />
+
+                <Button
+                  mode="outlined"
+                  icon="repeat"
+                  onPress={() => router.push('/subscriptions' as any)}
+                  style={{ borderRadius: theme.roundness, borderColor: theme.colors.outline }}
+                  contentStyle={{ height: 38 }}
+                  labelStyle={{ fontSize: 13, fontWeight: '700' }}
+                >
+                  Subscription Tracker
+                </Button>
               </Card.Content>
             </Card>
 

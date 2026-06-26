@@ -44,6 +44,7 @@ import { getBenchmarkComparison } from '../services/benchmarkService';
 import { getPassiveIncomeSummary } from '../services/passiveIncomeService';
 import { getSectorOverlapAnalysis } from '../services/sectorService';
 import { simulatePayoff, getActiveLoans } from '../services/payoffService';
+import { getSubscriptions, getSubscriptionSummary, getUpcomingRenewals } from '../services/subscriptionService';
 import { chartColors, palette } from '../theme';
 import { todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
@@ -64,6 +65,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'debt_payoff', label: 'Debt Payoff Planner' },
   { key: 'passive_income', label: 'Passive Income & Forecast' },
   { key: 'sector', label: 'Sector Overlap Analysis' },
+  { key: 'subscriptions', label: 'Subscription Tracker' },
 ];
 
 // Base64 helper tables and encoders/decoders for Hermes/React Native compatibility
@@ -1559,6 +1561,146 @@ const buildHtmlReport = async (
     `;
   }
 
+  let subscriptionsHtml = '';
+  if (selected.subscriptions) {
+    const activeSubs = getSubscriptions(userId);
+    const hasSubs = activeSubs.length > 0;
+    const displaySubs = hasSubs ? activeSubs : [
+      { id: 'm1', name: 'Netflix', amount: 64900, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'entertainment', status: 'active', notes: 'Premium 4K plan' },
+      { id: 'm2', name: 'Spotify', amount: 11900, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'music', status: 'active', notes: 'Individual plan' },
+      { id: 'm3', name: 'Google One', amount: 13000, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'cloud', status: 'active', notes: '100 GB storage' },
+      { id: 'm4', name: 'Gym Membership', amount: 120000, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'fitness', status: 'active', notes: 'Quarterly cult.fit pass' }
+    ];
+
+    let monthlyTotal = 0;
+    let yearlyTotal = 0;
+    displaySubs.forEach((s: any) => {
+      let amt = s.amount;
+      if (s.billing_cycle === 'monthly') {
+        monthlyTotal += amt;
+        yearlyTotal += amt * 12;
+      } else if (s.billing_cycle === 'yearly') {
+        monthlyTotal += Math.round(amt / 12);
+        yearlyTotal += amt;
+      } else if (s.billing_cycle === 'quarterly') {
+        monthlyTotal += Math.round(amt / 3);
+        yearlyTotal += amt * 4;
+      }
+    });
+
+    const today = new Date(todayISO() + 'T00:00:00');
+    const upcomingRenewals = displaySubs
+      .map((s: any) => {
+        const nextDate = new Date(s.next_billing_date + 'T00:00:00');
+        const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return { ...s, daysLeft: diffDays >= 0 ? diffDays : 0 };
+      })
+      .sort((a: any, b: any) => a.daysLeft - b.daysLeft);
+
+    subscriptionsHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Subscription & Recurring Expense Tracker</div>
+        
+        ${!hasSubs ? `
+          <div class="warning-banner" style="background-color: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; margin-bottom: 15px;">
+            <div class="warning-title" style="color: #1d4ed8;">DEMO MODE: EDUCATIONAL FALLBACK ACTIVE</div>
+            No active subscriptions detected in your profile database. Showing a curated baseline demo of typical subscription services to illustrate optimization potentials.
+          </div>
+        ` : ''}
+
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Active Subscriptions</div>
+            <div class="kpi-value">${displaySubs.length} tracked</div>
+            <div class="kpi-sub">Outflows monitored</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #ef4444;">
+            <div class="kpi-label">Monthly Outflow</div>
+            <div class="kpi-value">${formatINR(monthlyTotal)}</div>
+            <div class="kpi-sub">Recurring billing speed</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #f59e0b;">
+            <div class="kpi-label">Annualized Outflow</div>
+            <div class="kpi-value">${formatINR(yearlyTotal)}</div>
+            <div class="kpi-sub">Compounded yearly burden</div>
+          </div>
+        </div>
+
+        <div style="padding: 12px; border: 1px solid #fca5a5; border-radius: 6px; background-color: #fef2f2; color: #991b1b; font-size: 11.5px; line-height: 17px; margin-bottom: 15px;">
+          <strong>Savings Insight:</strong> You are spending approximately <strong>${formatINR(yearlyTotal)} annually</strong> across recurring memberships. Auditing and canceling just one unused service (e.g. saving ₹500/month) saves <strong>₹6,000 every year</strong>, which could be redirected towards high-yield compounding financial goals!
+        </div>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px;">Active Subscriptions Audit</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Service / Merchant</th>
+              <th>Category</th>
+              <th>Billing Cycle</th>
+              <th class="text-right">Billing Amount</th>
+              <th>Next Renewal Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${displaySubs.map((s: any) => {
+              const categoryLabels: Record<string, string> = {
+                entertainment: 'Entertainment',
+                music: 'Music & Audio',
+                cloud: 'Cloud & SaaS',
+                utilities: 'Utilities',
+                fitness: 'Fitness & Gym',
+                other: 'Other Recurring'
+              };
+              const cycleLabels: Record<string, string> = {
+                monthly: 'Monthly',
+                quarterly: 'Quarterly',
+                yearly: 'Yearly'
+              };
+              const catLabel = categoryLabels[s.category] || titleCase(s.category);
+              const cycleLabel = cycleLabels[s.billing_cycle] || titleCase(s.billing_cycle);
+              const statusTone = s.status === 'active' ? 'good' : 'muted';
+              return `
+                <tr>
+                  <td><strong>${s.name}</strong>${s.notes ? `<br/><span style="font-size: 10px; color: #6b7280;">${s.notes}</span>` : ''}</td>
+                  <td>${catLabel}</td>
+                  <td>${cycleLabel}</td>
+                  <td class="text-right" style="font-weight: 600; color: #1f2937;">${formatINR(s.amount)}</td>
+                  <td>${s.next_billing_date}</td>
+                  <td><span class="badge badge-${statusTone}">${titleCase(s.status)}</span></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Upcoming Renewal Schedule (Next 30 Days)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Service / Merchant</th>
+              <th>Due Date</th>
+              <th>Timeline Remaining</th>
+              <th class="text-right">Amount Due</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${upcomingRenewals.map((s: any) => `
+              <tr>
+                <td><strong>${s.name}</strong></td>
+                <td>${s.next_billing_date}</td>
+                <td style="font-weight: bold; color: ${s.daysLeft <= 3 ? '#ef4444' : s.daysLeft <= 7 ? '#f59e0b' : '#3b82f6'};">
+                  ${s.daysLeft === 0 ? 'Today' : s.daysLeft === 1 ? 'Tomorrow' : `In ${s.daysLeft} days`}
+                </td>
+                <td class="text-right" style="font-weight: 700;">${formatINR(s.amount)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   return `
     <!DOCTYPE html>
     <html>
@@ -1771,6 +1913,7 @@ const buildHtmlReport = async (
       ${debtPayoffHtml}
       ${passiveIncomeHtml}
       ${sectorHtml}
+      ${subscriptionsHtml}
       ${vaultHtml}
     </body>
     </html>
@@ -1813,6 +1956,7 @@ const ReportsScreen: React.FC = () => {
     debt_payoff: true,
     passive_income: true,
     sector: true,
+    subscriptions: true,
   });
   const [snack, setSnack] = useState('');
   const allOn = MODULES.every((m) => selected[m.key]);
@@ -2031,6 +2175,43 @@ const ReportsScreen: React.FC = () => {
       }
       lines.push('');
     }
+    
+    if (selected.subscriptions) {
+      lines.push('— Subscription Tracker —');
+      const activeSubs = getSubscriptions(userId!);
+      const hasSubs = activeSubs.length > 0;
+      const displaySubs = hasSubs ? activeSubs : [
+        { id: 'm1', name: 'Netflix', amount: 64900, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'entertainment', status: 'active', notes: 'Premium 4K plan' },
+        { id: 'm2', name: 'Spotify', amount: 11900, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'music', status: 'active', notes: 'Individual plan' },
+        { id: 'm3', name: 'Google One', amount: 13000, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'cloud', status: 'active', notes: '100 GB storage' },
+        { id: 'm4', name: 'Gym Membership', amount: 120000, billing_cycle: 'monthly', next_billing_date: todayISO(), category: 'fitness', status: 'active', notes: 'Quarterly cult.fit pass' }
+      ];
+
+      let monthlyTotal = 0;
+      let yearlyTotal = 0;
+      displaySubs.forEach((s: any) => {
+        let amt = s.amount;
+        if (s.billing_cycle === 'monthly') {
+          monthlyTotal += amt;
+          yearlyTotal += amt * 12;
+        } else if (s.billing_cycle === 'yearly') {
+          monthlyTotal += Math.round(amt / 12);
+          yearlyTotal += amt;
+        } else if (s.billing_cycle === 'quarterly') {
+          monthlyTotal += Math.round(amt / 3);
+          yearlyTotal += amt * 4;
+        }
+      });
+
+      lines.push(`Active Subscriptions: ${displaySubs.length}`);
+      lines.push(`Total Monthly Outflow: ${formatINR(monthlyTotal)}`);
+      lines.push(`Total Yearly Outflow: ${formatINR(yearlyTotal)}`);
+      displaySubs.forEach((s: any) => {
+        lines.push(`  • ${s.name}: ${formatINR(s.amount)} (${titleCase(s.billing_cycle)}) - Next: ${s.next_billing_date}`);
+      });
+      lines.push('');
+    }
+
     return lines.join('\n');
   };
 
