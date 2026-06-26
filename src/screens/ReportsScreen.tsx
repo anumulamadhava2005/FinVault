@@ -43,6 +43,7 @@ import { capitalGains } from '../services/taxService';
 import { getBenchmarkComparison } from '../services/benchmarkService';
 import { getPassiveIncomeSummary } from '../services/passiveIncomeService';
 import { getSectorOverlapAnalysis } from '../services/sectorService';
+import { simulatePayoff, getActiveLoans } from '../services/payoffService';
 import { chartColors, palette } from '../theme';
 import { todayISO } from '../utils/date';
 import { formatINR } from '../utils/money';
@@ -60,6 +61,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'benchmark_nifty', label: 'Benchmark vs Nifty Audit' },
   { key: 'tax', label: 'Capital Gains Audit' },
   { key: 'expense_ratio', label: 'Expense Ratio Analyzer' },
+  { key: 'debt_payoff', label: 'Debt Payoff Planner' },
   { key: 'passive_income', label: 'Passive Income & Forecast' },
   { key: 'sector', label: 'Sector Overlap Analysis' },
 ];
@@ -324,6 +326,79 @@ const runCompounding = (
   const dragPct = finalA > 0 ? (savings / finalA) * 100 : 0;
 
   return { finalA, finalB, savings, dragPct };
+};
+
+const getMockLoans = (userId: string): Loan[] => [
+  {
+    id: 'mock_home',
+    user_id: userId,
+    loan_type: 'home',
+    provider: 'SBI Home Finance',
+    account_number: 'XXXX-1234',
+    borrower_name: 'User',
+    original_amount: 400000000,
+    outstanding_amount: 400000000,
+    interest_rate: 8.5,
+    emi_amount: 3470000,
+    start_date: '2026-01-01',
+    end_date: '2046-01-01',
+    next_due_date: '2026-07-01',
+    prepayment_total: 0,
+    notes: 'Home Purchase',
+    status: 'active',
+    interest_type: 'floating',
+    details_json: null,
+    created_at: '2026-01-01',
+  },
+  {
+    id: 'mock_car',
+    user_id: userId,
+    loan_type: 'vehicle',
+    provider: 'HDFC Car Loans',
+    account_number: 'XXXX-5678',
+    borrower_name: 'User',
+    original_amount: 80000000,
+    outstanding_amount: 80000000,
+    interest_rate: 9.5,
+    emi_amount: 1500000,
+    start_date: '2026-01-01',
+    end_date: '2031-01-01',
+    next_due_date: '2026-07-01',
+    prepayment_total: 0,
+    notes: 'Family Car',
+    status: 'active',
+    interest_type: 'fixed',
+    details_json: null,
+    created_at: '2026-01-01',
+  },
+  {
+    id: 'mock_personal',
+    user_id: userId,
+    loan_type: 'personal',
+    provider: 'ICICI Bank',
+    account_number: 'XXXX-9012',
+    borrower_name: 'User',
+    original_amount: 30000000,
+    outstanding_amount: 30000000,
+    interest_rate: 12.0,
+    emi_amount: 1000000,
+    start_date: '2026-01-01',
+    end_date: '2029-01-01',
+    next_due_date: '2026-07-01',
+    prepayment_total: 0,
+    notes: 'Emergency Personal Expense',
+    status: 'active',
+    interest_type: 'fixed',
+    details_json: null,
+    created_at: '2026-01-01',
+  },
+];
+
+const getFutureMonthYear = (monthsAhead: number): string => {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const date = new Date(todayISO() + 'T00:00:00');
+  date.setMonth(date.getMonth() + monthsAhead);
+  return `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
 };
 
 /** Compiles HTML file containing report tables and charts. */
@@ -1191,6 +1266,129 @@ const buildHtmlReport = async (
     `;
   }
 
+  let debtPayoffHtml = '';
+  if (selected.debt_payoff) {
+    const activeLoans = getActiveLoans(userId!);
+    const isHypothetical = activeLoans.length === 0;
+    const simLoans = isHypothetical ? getMockLoans(userId!) : activeLoans;
+    const extraPay = 1500000; // ₹15,000 in paise
+
+    const avalanche = simulatePayoff(simLoans, extraPay, 'avalanche');
+    const snowball = simulatePayoff(simLoans, extraPay, 'snowball');
+
+    const totalOutstanding = simLoans.reduce((sum, l) => sum + l.outstanding_amount, 0) / 100;
+
+    let loanAuditRows = '';
+    avalanche.loanDetails.forEach(detail => {
+      const typeLabel = detail.loanType.toUpperCase().replace('_', ' ');
+      const name = detail.provider ? `${typeLabel} (${detail.provider})` : typeLabel;
+      loanAuditRows += `
+        <tr>
+          <td><strong>${name}</strong></td>
+          <td class="text-right">${formatINR(detail.outstanding)}</td>
+          <td class="text-right">${detail.interestRate.toFixed(1)}%</td>
+          <td class="text-right" style="font-weight: 700; color: #3b82f6;">
+            ${detail.acceleratedMonths} mo <span style="font-weight: normal; color: #6b7280;">(vs ${detail.baselineMonths} mo)</span>
+          </td>
+          <td class="text-right" style="color: ${detail.savings > 0 ? '#10b981' : '#6b7280'}; font-weight: 600;">
+            ${detail.savings > 0 ? formatINR(detail.savings) : '—'}
+          </td>
+        </tr>
+      `;
+    });
+
+    debtPayoffHtml = `
+      <div class="section" style="page-break-inside: avoid;">
+        <div class="section-title">Debt Payoff Planner & Acceleration Audit</div>
+        
+        <div class="kpi-container" style="margin-bottom: 15px;">
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #3b82f6;">
+            <div class="kpi-label">Debt Outstanding</div>
+            <div class="kpi-value">${formatINR(totalOutstanding * 100)}</div>
+            <div class="kpi-sub">${simLoans.length} Included Loans</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #8b5cf6;">
+            <div class="kpi-label">Extra Prepayment</div>
+            <div class="kpi-value">${formatINR(extraPay)}</div>
+            <div class="kpi-sub">Monthly added payment</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Interest Saved</div>
+            <div class="kpi-value">${formatINR(avalanche.interestSaved)}</div>
+            <div class="kpi-sub">Via Avalanche method</div>
+          </div>
+          <div class="kpi-card" style="text-align: center; border-left: 4px solid #10b981;">
+            <div class="kpi-label">Timeline Accelerated</div>
+            <div class="kpi-value">${avalanche.monthsSaved} Months</div>
+            <div class="kpi-sub">Time saved to debt-freedom</div>
+          </div>
+        </div>
+
+        <div style="padding: 12px; border: 1px solid #86efac; border-radius: 6px; background-color: #f0fdf4; color: #15803d; font-size: 11.5px; line-height: 17px; margin-bottom: 15px;">
+          <strong>Actionable Debt-Free Recommendation:</strong> By applying the Avalanche method (repaying high-interest debt first) with an extra <strong>${formatINR(extraPay)}/month</strong>, you would save <strong>${formatINR(avalanche.interestSaved)}</strong> in unnecessary interest fees and pay off all loans <strong>${avalanche.monthsSaved} months earlier</strong>! You will be completely debt-free by <strong>${avalanche.newPayoffDate}</strong>.
+        </div>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px;">
+          Comparison of Debt Payoff Strategies ${isHypothetical ? '(Hypothetical Simulation: ₹40L home + ₹8L car + ₹3L personal loan)' : '(Based on your actual active loans)'}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Strategy Method</th>
+              <th class="text-right">Extra Prepayment</th>
+              <th class="text-right">Total Interest Paid</th>
+              <th class="text-right" style="color: #10b981;">Total Interest Saved</th>
+              <th class="text-right">Payoff Duration</th>
+              <th class="text-right">Debt-Free Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Baseline (Mandatory EMI Only)</strong></td>
+              <td class="text-right">—</td>
+              <td class="text-right">${formatINR(avalanche.baselineInterest)}</td>
+              <td class="text-right" style="color: #6b7280;">—</td>
+              <td class="text-right">${avalanche.baselineDuration} Months</td>
+              <td class="text-right">${getFutureMonthYear(avalanche.baselineDuration)}</td>
+            </tr>
+            <tr style="background-color: #ecfdf5;">
+              <td><strong style="color: #065f46;">Avalanche Method (Highest Rate First)</strong></td>
+              <td class="text-right" style="font-weight: 600;">${formatINR(extraPay)}/mo</td>
+              <td class="text-right">${formatINR(avalanche.acceleratedInterest)}</td>
+              <td class="text-right" style="color: #10b981; font-weight: bold;">${formatINR(avalanche.interestSaved)}</td>
+              <td class="text-right" style="font-weight: bold; color: #0f766e;">${avalanche.acceleratedDuration} Months</td>
+              <td class="text-right" style="font-weight: bold; color: #0f766e;">${avalanche.newPayoffDate}</td>
+            </tr>
+            <tr>
+              <td><strong>Snowball Method (Smallest Debt First)</strong></td>
+              <td class="text-right" style="font-weight: 600;">${formatINR(extraPay)}/mo</td>
+              <td class="text-right">${formatINR(snowball.acceleratedInterest)}</td>
+              <td class="text-right" style="color: #10b981; font-weight: bold;">${formatINR(snowball.interestSaved)}</td>
+              <td class="text-right" style="font-weight: bold;">${snowball.acceleratedDuration} Months</td>
+              <td class="text-right" style="font-weight: bold;">${snowball.newPayoffDate}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="font-weight: 700; margin-bottom: 6px; color: #111827; font-size: 12px; margin-top: 15px;">Individual Loan Closure & Savings (Avalanche Strategy)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Loan Account / Provider</th>
+              <th class="text-right">Outstanding Balance</th>
+              <th class="text-right">Interest Rate</th>
+              <th class="text-right">Accelerated Payoff (vs Base)</th>
+              <th class="text-right" style="color: #10b981;">Interest Saved</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${loanAuditRows}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   let passiveIncomeHtml = '';
   if (selected.passive_income) {
     const pi = getPassiveIncomeSummary(userId);
@@ -1570,6 +1768,7 @@ const buildHtmlReport = async (
       ${goalsHtml}
       ${taxHtml}
       ${expenseRatioHtml}
+      ${debtPayoffHtml}
       ${passiveIncomeHtml}
       ${sectorHtml}
       ${vaultHtml}
@@ -1611,6 +1810,7 @@ const ReportsScreen: React.FC = () => {
     benchmark_nifty: true,
     tax: true,
     expense_ratio: true,
+    debt_payoff: true,
     passive_income: true,
     sector: true,
   });
@@ -1772,6 +1972,35 @@ const ReportsScreen: React.FC = () => {
         mfs.forEach(f => {
           const savings = (f.current_value * (Math.max(0, f.ter - 0.12) / 100)) / 100;
           lines.push(`  • ${f.name}: ${f.ter.toFixed(2)}% Expense · Value: ${formatINR(f.current_value)}${savings > 0 ? ` · Potential Savings: ${formatINR(savings * 100)}/yr` : ''}`);
+        });
+      }
+      lines.push('');
+    }
+    if (selected.debt_payoff) {
+      lines.push('— Debt Payoff Planner & Acceleration Audit —');
+      const activeLoans = getActiveLoans(userId!);
+      const isHypothetical = activeLoans.length === 0;
+      const simLoans = isHypothetical ? getMockLoans(userId!) : activeLoans;
+      const extraPay = 1500000; // ₹15,000 in paise
+
+      const avalanche = simulatePayoff(simLoans, extraPay, 'avalanche');
+      const snowball = simulatePayoff(simLoans, extraPay, 'snowball');
+
+      const totalOut = simLoans.reduce((sum, l) => sum + l.outstanding_amount, 0);
+      lines.push(`Total Debt Outstanding: ${formatINR(totalOut)}`);
+      lines.push(`Extra Monthly Prepayment: ${formatINR(extraPay)}`);
+      lines.push(`Comparison of Debt Payoff Strategies (${isHypothetical ? 'Hypothetical Simulation' : 'Based on your actual loans'}):`);
+      lines.push(`  • Baseline (Mandatory EMI Only): Paid off in ${avalanche.baselineDuration} months · Total Interest: ${formatINR(avalanche.baselineInterest)}`);
+      lines.push(`  • Avalanche Method (Highest Rate First): Paid off in ${avalanche.acceleratedDuration} months (${avalanche.newPayoffDate}) · Savings: ${formatINR(avalanche.interestSaved)} · Months Saved: ${avalanche.monthsSaved}`);
+      lines.push(`  • Snowball Method (Smallest Debt First): Paid off in ${snowball.acceleratedDuration} months (${snowball.newPayoffDate}) · Savings: ${formatINR(snowball.interestSaved)} · Months Saved: ${snowball.monthsSaved}`);
+      lines.push(`Recommendation: Applying the Avalanche method saves the most interest. You would save ${formatINR(avalanche.interestSaved)} and be completely debt-free by ${avalanche.newPayoffDate}, ${avalanche.monthsSaved} months earlier.`);
+      
+      if (simLoans.length > 0) {
+        lines.push('Closure Timeline & Savings (Avalanche Strategy):');
+        avalanche.loanDetails.forEach(detail => {
+          const typeLabel = detail.loanType.toUpperCase().replace('_', ' ');
+          const name = detail.provider ? `${typeLabel} (${detail.provider})` : typeLabel;
+          lines.push(`  • ${name}: Outstanding: ${formatINR(detail.outstanding)} · Rate: ${detail.interestRate}% · Paid off in ${detail.acceleratedMonths} mo (vs ${detail.baselineMonths} mo)${detail.savings > 0 ? ` · Interest Saved: ${formatINR(detail.savings)}` : ''}`);
         });
       }
       lines.push('');

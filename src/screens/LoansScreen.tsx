@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useLayoutEffect } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
-import { useNavigation } from 'expo-router';
+import { useNavigation, router } from 'expo-router';
 import {
   Button,
   Card,
@@ -505,7 +505,7 @@ const LoansScreen: React.FC = () => {
             {debt.recommendations.length > 0 && (
               <>
                 <Divider style={{ marginVertical: 10, backgroundColor: theme.colors.outlineVariant }} />
-                <View style={{ gap: 6 }}>
+                <View style={{ gap: 6, marginBottom: 6 }}>
                   {debt.recommendations.map((rec, i) => (
                     <View key={i} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
                       <Text style={{ fontSize: 12, marginTop: 1 }}>💡</Text>
@@ -515,6 +515,15 @@ const LoansScreen: React.FC = () => {
                 </View>
               </>
             )}
+            <Divider style={{ marginVertical: 10, backgroundColor: theme.colors.outlineVariant }} />
+            <Button
+              mode="outlined"
+              icon="calculator"
+              onPress={() => router.push('/debt-payoff')}
+              style={{ borderRadius: theme.roundness }}
+            >
+              Debt Payoff Planner
+            </Button>
           </SectionCard>
         )}
 

@@ -1171,6 +1171,7 @@ const Navigator: React.FC = () => {
         <Drawer.Screen name="income" options={{ title: 'Passive Income', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="sector" options={{ title: 'Sector Overlap', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="expense-ratio" options={{ title: 'Fee Analyzer', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="debt-payoff" options={{ title: 'Debt Payoff Planner', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="loans" options={{ title: 'Loans', drawerIcon: drawerIcon('bank') }} />
         <Drawer.Screen name="protect" options={{ title: 'Protect', drawerIcon: drawerIcon('shield-check') }} />
         <Drawer.Screen name="goals" options={{ title: 'Goals', drawerIcon: drawerIcon('flag-checkered'), headerShown: false }} />
