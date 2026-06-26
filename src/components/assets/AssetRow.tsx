@@ -64,6 +64,62 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
   const cagr = calcCAGR(a.current_value, a.invested_amount, a.investment_date ?? a.purchase_date);
   const cfg = getTypeConfig(a.slug ?? '');
 
+  // Determine tax status details based on holding period and asset type
+  const taxStatus = React.useMemo(() => {
+    if (a.slug === 'fd' || a.slug === 'savings') {
+      return {
+        label: 'Slab Rate',
+        sub: 'Taxed as regular income',
+        badge: null,
+        tone: 'muted' as const,
+      };
+    }
+
+    const purchaseDate = a.purchase_date || a.investment_date;
+    if (!purchaseDate) {
+      return {
+        label: 'STCG',
+        sub: 'Short-term gain',
+        badge: 'STCG',
+        tone: 'warn' as const,
+      };
+    }
+
+    try {
+      const today = new Date();
+      const pDate = new Date(purchaseDate);
+      const diffTime = Math.abs(today.getTime() - pDate.getTime());
+      const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      const thresholds: Record<string, number> = {
+        equity: 365,
+        mutual_fund: 365,
+        real_estate: 730,
+        gold: 1095,
+        digital_gold: 1095,
+        physical_gold: 1095,
+        sgb: 1095,
+      };
+
+      const threshold = thresholds[a.slug ?? ''] ?? 1095;
+      const isLtcg = days > threshold;
+
+      return {
+        label: isLtcg ? 'LTCG' : 'STCG',
+        sub: isLtcg ? 'Long-term gain' : 'Short-term gain',
+        badge: isLtcg ? 'LTCG' : 'STCG',
+        tone: isLtcg ? ('good' as const) : ('warn' as const),
+      };
+    } catch {
+      return {
+        label: 'STCG',
+        sub: 'Short-term gain',
+        badge: 'STCG',
+        tone: 'warn' as const,
+      };
+    }
+  }, [a.slug, a.purchase_date, a.investment_date]);
+
   const qty = a.quantity ?? 0;
   const showPriceTags = !selectMode && PRICED_SLUGS.has(a.slug) && qty > 0;
 
@@ -151,6 +207,24 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
                   {getShortName(a.type_name)}
                 </Text>
               </View>
+              {taxStatus.badge && (
+                <View style={{
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 5,
+                  backgroundColor: taxStatus.badge === 'LTCG' ? (theme.dark ? '#1B2A1E' : '#ECFDF5') : (theme.dark ? '#2F2212' : '#FFFBEB'),
+                  borderWidth: 1,
+                  borderColor: taxStatus.badge === 'LTCG' ? (theme.dark ? '#059669' : '#A7F3D0') : (theme.dark ? '#D97706' : '#FDE68A'),
+                }}>
+                  <Text style={{
+                    fontSize: 9,
+                    fontWeight: '800',
+                    color: taxStatus.badge === 'LTCG' ? palette.good : palette.warn,
+                  }}>
+                    {taxStatus.badge}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Performance indicator line */}
@@ -256,6 +330,13 @@ const AssetRow: React.FC<AssetRowProps> = React.memo(({
             ) : (
               <Kpi flex label="Monthly SIP" value="Inactive" />
             )}
+            <Kpi
+              flex
+              label="Tax Status"
+              value={taxStatus.label}
+              subTone={taxStatus.tone}
+              sub={taxStatus.sub}
+            />
           </Row>
 
           {/* Expanded Actions Row */}
