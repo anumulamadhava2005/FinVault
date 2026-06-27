@@ -7,7 +7,9 @@ import React from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { LineChart } from 'react-native-chart-kit';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Polygon, Circle, Line, Text as SvgText, G } from 'react-native-svg';
+
+export const PIE = ['#4A7C6F', '#7FB5A8', '#D4956A', '#2D3142', '#F0B429', '#52A77E', '#316357', '#9DD1C2'];
 
 export const chartWidth = Dimensions.get('window').width - 60;
 
@@ -264,3 +266,244 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
 });
+
+export const RadarChart: React.FC<{
+  data: Record<string, number>;
+  labels: Record<string, string>;
+  color: string;
+}> = ({ data, labels, color }) => {
+  const theme = useTheme();
+
+  const AXES = ['diversification', 'risk', 'cost', 'performance', 'discipline'];
+  const CX = 170;
+  const CY = 120;
+  const R = 75;
+  const angles = AXES.map((_, i) => (i * 2 * Math.PI) / 5 - Math.PI / 2);
+
+  // Helper to convert hex to rgba
+  const hexToRgba = (hex: string, alpha: number): string => {
+    if (!hex) return `rgba(128, 128, 128, ${alpha})`;
+    if (hex.startsWith('rgba')) {
+      return hex.replace(/[\d\.]+\)$/g, `${alpha})`);
+    }
+    if (hex.startsWith('rgb')) {
+      return hex.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+    }
+    let c = hex.replace('#', '');
+    if (c.length === 3) {
+      c = c.split('').map((char) => char + char).join('');
+    }
+    const r = parseInt(c.substring(0, 2), 16) || 0;
+    const g = parseInt(c.substring(2, 4), 16) || 0;
+    const b = parseInt(c.substring(4, 6), 16) || 0;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
+  // Levels for concentric pentagons
+  const levels = [0.25, 0.5, 0.75, 1];
+
+  // Data points for data polygon
+  const dataPoints = angles.map((a, i) => {
+    const v = data[AXES[i]] ?? 0;
+    const r = (v / 100) * R;
+    return `${CX + r * Math.cos(a)},${CY + r * Math.sin(a)}`;
+  }).join(' ');
+
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', marginVertical: 8 }}>
+      <Svg width={340} height={240} viewBox="0 0 340 240">
+        {/* Concentric grid lines */}
+        {levels.map((lvl, index) => {
+          const points = angles.map(a => `${CX + R * lvl * Math.cos(a)},${CY + R * lvl * Math.sin(a)}`).join(' ');
+          const isOuter = index === levels.length - 1;
+          return (
+            <Polygon
+              key={lvl}
+              points={points}
+              fill="none"
+              stroke={theme.colors.outlineVariant}
+              strokeWidth={isOuter ? 1.5 : 1}
+              strokeDasharray={isOuter ? undefined : '3,3'}
+            />
+          );
+        })}
+
+        {/* Axis lines */}
+        {angles.map((a, i) => (
+          <Line
+            key={i}
+            x1={CX}
+            y1={CY}
+            x2={CX + R * Math.cos(a)}
+            y2={CY + R * Math.sin(a)}
+            stroke={theme.colors.outlineVariant}
+            strokeWidth={1}
+          />
+        ))}
+
+        {/* Data polygon */}
+        {dataPoints.trim().length > 0 && (
+          <Polygon
+            points={dataPoints}
+            fill={hexToRgba(color, 0.2)}
+            stroke={color}
+            strokeWidth={2}
+          />
+        )}
+
+        {/* Data dots */}
+        {angles.map((a, i) => {
+          const v = data[AXES[i]] ?? 0;
+          const r = (v / 100) * R;
+          return (
+            <Circle
+              key={i}
+              cx={CX + r * Math.cos(a)}
+              cy={CY + r * Math.sin(a)}
+              r={4}
+              fill={color}
+              stroke={theme.colors.surface}
+              strokeWidth={1}
+            />
+          );
+        })}
+
+        {/* Labels & Values */}
+        {angles.map((a, i) => {
+          const v = data[AXES[i]] ?? 0;
+          const labelName = labels[AXES[i]] ?? AXES[i];
+          const labelR = R + 14;
+          const labelX = CX + labelR * Math.cos(a);
+          const labelY = CY + labelR * Math.sin(a);
+
+          let textAnchor: 'middle' | 'start' | 'end' = 'middle';
+          let dy = 4;
+
+          if (i === 0) {
+            textAnchor = 'middle';
+            dy = -10;
+          } else if (i === 1) {
+            textAnchor = 'start';
+            dy = -4;
+          } else if (i === 2) {
+            textAnchor = 'start';
+            dy = 12;
+          } else if (i === 3) {
+            textAnchor = 'end';
+            dy = 12;
+          } else if (i === 4) {
+            textAnchor = 'end';
+            dy = -4;
+          }
+
+          return (
+            <G key={i}>
+              <SvgText
+                x={labelX}
+                y={labelY + dy}
+                fill={theme.colors.onSurface}
+                fontSize={10}
+                fontWeight="700"
+                textAnchor={textAnchor}
+              >
+                {labelName}
+              </SvgText>
+              <SvgText
+                x={labelX}
+                y={labelY + dy + 11}
+                fill={color}
+                fontSize={10}
+                fontWeight="800"
+                textAnchor={textAnchor}
+              >
+                {v}
+              </SvgText>
+            </G>
+          );
+        })}
+      </Svg>
+    </View>
+  );
+};
+
+export interface DonutDatum {
+  name: string;
+  value: number;
+  pct: number;
+  color: string;
+}
+
+export const DonutChart: React.FC<{
+  data: DonutDatum[];
+  size?: number;
+  strokeWidth?: number;
+}> = ({ data, size = 110, strokeWidth = 14 }) => {
+  const theme = useTheme();
+  const center = size / 2;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  const filteredData = data.filter((d) => d.value > 0);
+  const totalValue = filteredData.reduce((acc, d) => acc + d.value, 0);
+
+  if (filteredData.length === 0 || totalValue === 0) {
+    return (
+      <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+        <Svg width={size} height={size}>
+          <Circle
+            cx={center}
+            cy={center}
+            r={radius}
+            stroke={theme.colors.outlineVariant}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+          />
+        </Svg>
+        <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 9, fontWeight: '700' }}>
+            TOTAL
+          </Text>
+          <Text variant="titleMedium" style={{ color: theme.colors.onSurface, fontWeight: 'bold', fontSize: 13, marginTop: -2 }}>
+            0%
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  let accumulatedPct = 0;
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+        {filteredData.map((d, index) => {
+          const strokeLength = (d.pct / 100) * circumference;
+          const strokeOffset = circumference - (accumulatedPct / 100) * circumference;
+          accumulatedPct += d.pct;
+          return (
+            <Circle
+              key={d.name + index}
+              cx={center}
+              cy={center}
+              r={radius}
+              stroke={d.color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${strokeLength} ${circumference}`}
+              strokeDashoffset={strokeOffset}
+              fill="transparent"
+            />
+          );
+        })}
+      </Svg>
+      <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 9, fontWeight: '700' }}>
+          TOTAL
+        </Text>
+        <Text variant="titleMedium" style={{ color: theme.colors.onSurface, fontWeight: 'bold', fontSize: 13, marginTop: -2 }}>
+          100%
+        </Text>
+      </View>
+    </View>
+  );
+};
+

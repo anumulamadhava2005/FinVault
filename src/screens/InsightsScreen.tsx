@@ -3,13 +3,14 @@
  * Health score, daily insights feed, returns vs benchmark, allocation & risk,
  * diversification/concentration, hidden costs, hold/exit calls and discipline.
  */
-import React, { useLayoutEffect } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, useTheme, Button, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 
 import { Screen, SectionCard, Kpi, Row, ProgressBar, LineItem, EmptyState } from '../components/ui';
+import { RadarChart, DonutChart, PIE } from '../components/charts';
 import NotificationBell from '../components/NotificationBell';
 import ThemeToggle from '../components/ThemeToggle';
 import { useApp } from '../context/AppContext';
@@ -48,6 +49,9 @@ const InsightsScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation();
   const router = useRouter();
+
+  const [showAllInsights, setShowAllInsights] = useState(false);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
 
   const profile = useData(
     () => first<{ risk_profile: string }>('SELECT risk_profile FROM users WHERE id = ?', [userId!])?.risk_profile || 'moderate',
@@ -125,17 +129,7 @@ const InsightsScreen: React.FC = () => {
           </View>
         </View>
 
-        <View style={{ marginTop: 16, gap: 10 }}>
-          {Object.entries(health.subscores).map(([k, v]) => (
-            <View key={k}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>{subLabels[k] ?? k}</Text>
-                <Text variant="labelSmall" style={{ fontWeight: '700', color: theme.colors.onSurface }}>{v}</Text>
-              </View>
-              <ProgressBar pct={v as number} color={(v as number) >= 70 ? palette.good : (v as number) >= 50 ? palette.warn : palette.danger} height={6} />
-            </View>
-          ))}
-        </View>
+        <RadarChart data={health.subscores as Record<string, number>} labels={subLabels} color={healthColor} />
       </SectionCard>
 
       {/* ── Live market strip ── */}
@@ -162,7 +156,7 @@ const InsightsScreen: React.FC = () => {
       {/* ── Daily insights feed ── */}
       <SectionCard title="Daily Insights">
         <View style={{ gap: 10 }}>
-          {insights.map((it: Insight) => {
+          {(showAllInsights ? insights : insights.slice(0, 3)).map((it: Insight) => {
             const c = toneColor(it.tone, theme);
             return (
               <View key={it.id} style={[styles.insightRow, { borderColor: theme.colors.outlineVariant, backgroundColor: theme.colors.surfaceVariant + '40' }]}>
@@ -177,6 +171,16 @@ const InsightsScreen: React.FC = () => {
             );
           })}
         </View>
+        {insights.length > 3 && (
+          <Button
+            mode="text"
+            icon={showAllInsights ? 'chevron-up' : 'chevron-down'}
+            onPress={() => setShowAllInsights(!showAllInsights)}
+            style={{ marginTop: 8 }}
+          >
+            {showAllInsights ? 'Show Less' : 'Show More'}
+          </Button>
+        )}
       </SectionCard>
 
       {/* ── Returns vs benchmark ── */}
@@ -290,27 +294,60 @@ const InsightsScreen: React.FC = () => {
         )}
       </SectionCard>
 
-      {/* ── Allocation & risk ── */}
-      <SectionCard title="Allocation & Risk">
-        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>{risk.recommendation}</Text>
-        {risk.bars.map((b) => (
-          <View key={b.label} style={{ marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-              <Text variant="labelSmall" style={{ color: theme.colors.onSurface, fontWeight: '600' }}>{b.label}</Text>
-              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>{b.actual}% · ideal {b.ideal}%</Text>
-            </View>
-            <ProgressBar pct={b.actual} markerPct={b.ideal} color={theme.colors.primary} height={8} />
-          </View>
-        ))}
-      </SectionCard>
+      {/* ── Allocation & Diversification ── */}
+      <SectionCard title="Allocation & Diversification">
+        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>
+          {risk.recommendation}
+        </Text>
 
-      {/* ── Diversification ── */}
-      <SectionCard title="Diversification & Concentration">
-        <Row>
-          <Kpi flex label="Diversification" value={`${div.score}/100`} subTone={div.score >= 70 ? 'good' : div.score >= 50 ? 'muted' : 'bad'} />
-          <Kpi flex label="Top Holding" value={`${div.top_holding_pct}%`} sub={div.top_holding} subTone={div.concentrated ? 'bad' : 'muted'} />
-          <Kpi flex label="Holdings" value={String(div.holdings_count)} sub={`${div.fund_count} funds/stocks`} />
-        </Row>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
+          <View style={{ flex: 1.1, alignItems: 'center', justifyContent: 'center' }}>
+            <DonutChart
+              data={div.classes.map((c, i) => ({
+                name: c.label,
+                value: c.value,
+                pct: c.pct,
+                color: PIE[i % PIE.length],
+              }))}
+            />
+          </View>
+
+          <View style={{ flex: 1, gap: 8 }}>
+            <View style={[styles.summaryCard, { borderColor: theme.colors.outlineVariant, backgroundColor: theme.colors.surfaceVariant + '22' }]}>
+              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600', fontSize: 10 }}>
+                Diversification
+              </Text>
+              <Text variant="titleMedium" style={{ fontWeight: 'bold', color: div.score >= 70 ? palette.good : div.score >= 50 ? theme.colors.onSurface : palette.danger, fontSize: 14, marginTop: 2 }}>
+                {div.score}/100
+              </Text>
+            </View>
+
+            <View style={[styles.summaryCard, { borderColor: theme.colors.outlineVariant, backgroundColor: theme.colors.surfaceVariant + '22' }]}>
+              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600', fontSize: 10 }} numberOfLines={1}>
+                Largest Holding
+              </Text>
+              <Text variant="titleMedium" style={{ fontWeight: 'bold', color: div.concentrated ? palette.danger : theme.colors.onSurface, fontSize: 14, marginTop: 2 }} numberOfLines={1}>
+                {div.top_holding_pct}%
+              </Text>
+              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 8, marginTop: 1 }} numberOfLines={1}>
+                {div.top_holding}
+              </Text>
+            </View>
+
+            <View style={[styles.summaryCard, { borderColor: theme.colors.outlineVariant, backgroundColor: theme.colors.surfaceVariant + '22' }]}>
+              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600', fontSize: 10 }}>
+                Holdings
+              </Text>
+              <Text variant="titleMedium" style={{ fontWeight: 'bold', color: theme.colors.onSurface, fontSize: 14, marginTop: 2 }}>
+                {div.holdings_count}
+              </Text>
+              <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, fontSize: 8, marginTop: 1 }}>
+                {div.fund_count} funds/stocks
+              </Text>
+            </View>
+          </View>
+        </View>
+
         {(div.concentrated || div.over_diversified) && (
           <View style={{ marginTop: 10, gap: 4 }}>
             {div.concentrated && (
@@ -321,6 +358,7 @@ const InsightsScreen: React.FC = () => {
             )}
           </View>
         )}
+
         <View style={{ marginTop: 12 }}>
           {div.classes.map((c) => (
             <LineItem key={c.cls} label={c.label} value={`${c.pct}% · ${formatINR(c.value)}`} />
@@ -369,7 +407,7 @@ const InsightsScreen: React.FC = () => {
       {suggestions.length > 0 && (
         <SectionCard title="Hold / Exit Suggestions">
           <View style={{ gap: 10 }}>
-            {suggestions.slice(0, 8).map((s) => {
+            {(showAllSuggestions ? suggestions : suggestions.slice(0, 3)).map((s) => {
               const c = toneColor(s.tone, theme);
               const meta = ACTION_META[s.action];
               return (
@@ -386,6 +424,16 @@ const InsightsScreen: React.FC = () => {
               );
             })}
           </View>
+          {suggestions.length > 3 && (
+            <Button
+              mode="text"
+              icon={showAllSuggestions ? 'chevron-up' : 'chevron-down'}
+              onPress={() => setShowAllSuggestions(!showAllSuggestions)}
+              style={{ marginTop: 8 }}
+            >
+              {showAllSuggestions ? 'Show Less' : 'Show More'}
+            </Button>
+          )}
         </SectionCard>
       )}
 
@@ -433,6 +481,13 @@ const styles = StyleSheet.create({
   insightIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   benchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, gap: 8 },
   actionPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, minWidth: 64, justifyContent: 'center' },
+  summaryCard: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
 });
 
 export default InsightsScreen;
