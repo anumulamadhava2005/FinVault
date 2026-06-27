@@ -476,9 +476,18 @@ export const DonutChart: React.FC<{
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+        {/* Background track underlay */}
+        <Circle
+          cx={center}
+          cy={center}
+          r={radius}
+          stroke={theme.dark ? '#334155' : '#E2E8F0'}
+          strokeWidth={strokeWidth}
+          fill="transparent"
+        />
         {filteredData.map((d, index) => {
           const strokeLength = (d.pct / 100) * circumference;
-          const strokeOffset = circumference - (accumulatedPct / 100) * circumference;
+          const strokeOffset = - (accumulatedPct / 100) * circumference;
           accumulatedPct += d.pct;
           return (
             <Circle

@@ -36,6 +36,17 @@ import { formatINR, formatINRCompact } from '../utils/money';
 const toneColor = (tone: string, theme: any) =>
   tone === 'good' ? palette.good : tone === 'warn' ? palette.warn : tone === 'bad' ? palette.danger : theme.colors.primary;
 
+const getAssetColor = (cls: string) => {
+  const colors: Record<string, string> = {
+    equity: '#3B82F6',      // Dodger Blue
+    debt: '#8B5CF6',        // Medium Violet
+    gold: '#D97706',        // Amber Gold
+    real_estate: '#059669', // Emerald Green
+    other: '#64748B',       // Slate Grey
+  };
+  return colors[cls] ?? colors.other;
+};
+
 const ACTION_META: Record<HoldExit['action'], { label: string; icon: string }> = {
   hold: { label: 'HOLD', icon: 'check-circle-outline' },
   add: { label: 'ADD', icon: 'plus-circle-outline' },
@@ -303,11 +314,11 @@ const InsightsScreen: React.FC = () => {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
           <View style={{ flex: 1.1, alignItems: 'center', justifyContent: 'center' }}>
             <DonutChart
-              data={div.classes.map((c, i) => ({
+              data={div.classes.map((c) => ({
                 name: c.label,
                 value: c.value,
                 pct: c.pct,
-                color: PIE[i % PIE.length],
+                color: getAssetColor(c.cls),
               }))}
             />
           </View>
@@ -360,9 +371,20 @@ const InsightsScreen: React.FC = () => {
         )}
 
         <View style={{ marginTop: 12 }}>
-          {div.classes.map((c) => (
-            <LineItem key={c.cls} label={c.label} value={`${c.pct}% · ${formatINR(c.value)}`} />
-          ))}
+          {div.classes.map((c) => {
+            const assetColor = getAssetColor(c.cls);
+            return (
+              <View key={c.cls} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 12 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: assetColor }} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: assetColor }}>{c.label}</Text>
+                </View>
+                <Text style={{ fontWeight: '600', color: theme.colors.onSurface, fontSize: 13, fontVariant: ['tabular-nums'], textAlign: 'right' }}>
+                  {c.pct}% · {formatINR(c.value)}
+                </Text>
+              </View>
+            );
+          })}
         </View>
         <Divider style={{ marginTop: 14, marginBottom: 12, opacity: 0.5 }} />
         <Button
